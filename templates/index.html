@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fonie - RFID Spotify Player</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1DB954 0%, #191414 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .header {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 2.5em;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .auth-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .user-avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #1DB954;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 20px;
+    }
+    .btn {
+      background: #1DB954;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover {
+      background: #1ed760;
+      transform: translateY(-2px);
+    }
+    .btn.logout {
+      background: #fc8181;
+    }
+    .btn.logout:hover {
+      background: #f56565;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .card h2 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 1.5em;
+      border-bottom: 3px solid #1DB954;
+      padding-bottom: 10px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #4a5568;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    input:focus {
+      outline: none;
+      border-color: #1DB954;
+      box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.1);
+    }
+    .search-results {
+      max-height: 250px;
+      overflow-y: auto;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      margin-top: 10px;
+      display: none;
+      background: #f7fafc;
+    }
+    .search-result {
+      padding: 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #e2e8f0;
+      transition: background 0.2s;
+    }
+    .search-result:hover {
+      background: #edf2f7;
+    }
+    .search-result strong {
+      display: block;
+      color: #333;
+    }
+    .search-result .type {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 10px;
+      background: #1DB954;
+      color: white;
+    }
+    .mappings-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .mappings-table th, .mappings-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .mappings-table th {
+      background: #f7fafc;
+      font-weight: 600;
+      color: #4a5568;
+    }
+    .mappings-table code {
+      background: #edf2f7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+    }
+    .delete-btn {
+      background: #fc8181;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .delete-btn:hover {
+      background: #f56565;
+    }
+    .alert {
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      display: none;
+    }
+    .alert.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .alert.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .alert.show {
+      display: block;
+    }
+    .login-prompt {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .login-prompt h2 {
+      color: white;
+      margin-bottom: 20px;
+      font-size: 2em;
+    }
+    .login-prompt p {
+      color: rgba(255, 255, 255, 0.9);
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+    .btn-large {
+      background: #1DB954;
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: 600;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-large:hover {
+      background: #1ed760;
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    {% if authenticated and user_info %}
+    <div class="header">
+      <h1>🎵 Fonie</h1>
+      <div class="auth-section">
+        <div class="user-info">
+          <div class="user-avatar">
+            {{ user_info.display_name[0].upper() if user_info.display_name else '🎵' }}
+          </div>
+          <div>
+            <strong>{{ user_info.display_name or 'Spotify User' }}</strong><br>
+            <small>✅ Connected</small>
+          </div>
+        </div>
+        <a href="/logout" class="btn logout">Logout</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>➕ Add RFID Mapping</h2>
+      <div id="mapping-alert" class="alert"></div>
+      
+      <div class="form-group">
+        <label>RFID Tag ID</label>
+        <input type="text" id="rfid-input" placeholder="Enter RFID tag ID">
+      </div>
+
+      <div class="form-group">
+        <label>Search Spotify</label>
+        <input type="text" id="spotify-search" placeholder="Search songs, albums, playlists">
+        <div class="search-results" id="search-results"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Track Name</label>
+        <input type="text" id="name-input" placeholder="Will auto-fill" disabled>
+      </div>
+
+      <div class="form-group">
+        <label>Artist</label>
+        <input type="text" id="artist-input" placeholder="Will auto-fill" disabled>
+      </div>
+
+      <button class="btn" onclick="addMapping()">Add Mapping</button>
+    </div>
+
+    <div class="card">
+      <h2>📋 RFID Mappings</h2>
+      <div id="mappings-container">
+        <p>No mappings yet.</p>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="login-prompt">
+      <h2>🎵 Welcome to Fonie</h2>
+      <p>Connect your Spotify account</p>
+      <a href="/login" class="btn-large">🔗 Connect with Spotify</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+    let selectedSpotifyItem = null;
+    let searchTimeout;
+
+    {% if authenticated %}
+    document.getElementById('spotify-search').addEventListener('input', async (e) => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value;
+      const resultsDiv = document.getElementById('search-results');
+      
+      if (query.length < 2) {
+        resultsDiv.style.display = 'none';
+        return;
+      }
+      
+      resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">🔍 Searching...</div>';
+      resultsDiv.style.display = 'block';
+      
+      searchTimeout = setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+          const results = await response.json();
+          
+          resultsDiv.innerHTML = '';
+          if (results.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">No results</div>';
+            return;
+          }
+          
+          results.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'search-result';
+            div.innerHTML = `<strong>${item.name}</strong> - ${item.artist} <span class="type">${item.type}</span>`;
+            div.onclick = () => selectItem(item);
+            resultsDiv.appendChild(div);
+          });
+        } catch (e) {
+          resultsDiv.innerHTML = '<div style="padding: 10px; color: red;">Error</div>';
+        }
+      }, 500);
+    });
+
+    function selectItem(item) {
+      selectedSpotifyItem = item;
+      document.getElementById('spotify-search').value = `${item.name} - ${item.artist}`;
+      document.getElementById('name-input').value = item.name;
+      document.getElementById('artist-input').value = item.artist;
+      document.getElementById('search-results').style.display = 'none';
+    }
+
+    async function addMapping() {
+      const rfid = document.getElementById('rfid-input').value.trim();
+      if (!rfid || !selectedSpotifyItem) {
+        showAlert('Please enter RFID and select a track', 'error');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/mappings/add', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            rfid_tag: rfid,
+            spotify_uri: selectedSpotifyItem.uri,
+            name: selectedSpotifyItem.name,
+            artist: selectedSpotifyItem.artist
+          })
+        });
+
+        if (response.ok) {
+          showAlert('✅ Mapping added!', 'success');
+          document.getElementById('rfid-input').value = '';
+          document.getElementById('spotify-search').value = '';
+          document.getElementById('name-input').value = '';
+          document.getElementById('artist-input').value = '';
+          selectedSpotifyItem = null;
+          refreshMappings();
+        } else {
+          showAlert('❌ Error adding mapping', 'error');
+        }
+      } catch (e) {
+        showAlert('Connection error', 'error');
+      }
+    }
+
+    async function deleteMapping(rfid) {
+      if (!confirm('Delete?')) return;
+      try {
+        const response = await fetch(`/api/mappings/delete/${rfid}`, {method: 'POST'});
+        if (response.ok) {
+          refreshMappings();
+        }
+      } catch (e) {}
+    }
+
+    async function refreshMappings() {
+      try {
+        const response = await fetch('/api/mappings');
+        const mappings = await response.json();
+        const container = document.getElementById('mappings-container');
+
+        if (Object.keys(mappings).length === 0) {
+          container.innerHTML = '<p>No mappings yet.</p>';
+          return;
+        }
+
+        let html = '<table class="mappings-table"><thead><tr><th>RFID</th><th>Track</th><th>Artist</th><th>Action</th></tr></thead><tbody>';
+        for (const [rfid, info] of Object.entries(mappings)) {
+          html += `<tr><td><code>${rfid}</code></td><td>${info.name}</td><td>${info.artist}</td><td><button class="delete-btn" onclick="deleteMapping('${rfid}')">Delete</button></td></tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (e) {}
+    }
+
+    function showAlert(msg, type) {
+      const alert = document.getElementById('mapping-alert');
+      alert.textContent = msg;
+      alert.className = `alert ${type} show`;
+      setTimeout(() => alert.classList.remove('show'), 5000);
+    }
+
+    refreshMappings();
+    {% endif %}
+  </script>
+</body>
+</html>

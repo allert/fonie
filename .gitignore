@@ -1,0 +1,9 @@
+.env
+.spotifycache
+*.pyc
+__pycache__/
+.DS_Store
+rfid_mappings.json
+cert.pem
+key.pem
+*.img
