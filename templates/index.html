@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,16 +11,19 @@
       padding: 0;
       box-sizing: border-box;
     }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: linear-gradient(135deg, #1DB954 0%, #191414 100%);
       min-height: 100vh;
       padding: 20px;
     }
+
     .container {
       max-width: 900px;
       margin: 0 auto;
     }
+
     .header {
       background: rgba(255, 255, 255, 0.95);
       border-radius: 20px;
@@ -27,6 +31,7 @@
       margin-bottom: 20px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     }
+
     h1 {
       color: #333;
       margin-bottom: 20px;
@@ -35,6 +40,7 @@
       align-items: center;
       gap: 15px;
     }
+
     .auth-section {
       display: flex;
       align-items: center;
@@ -42,11 +48,13 @@
       flex-wrap: wrap;
       gap: 20px;
     }
+
     .user-info {
       display: flex;
       align-items: center;
       gap: 15px;
     }
+
     .user-avatar {
       width: 50px;
       height: 50px;
@@ -59,6 +67,7 @@
       font-weight: bold;
       font-size: 20px;
     }
+
     .btn {
       background: #1DB954;
       color: white;
@@ -72,16 +81,20 @@
       text-decoration: none;
       display: inline-block;
     }
+
     .btn:hover {
       background: #1ed760;
       transform: translateY(-2px);
     }
+
     .btn.logout {
       background: #fc8181;
     }
+
     .btn.logout:hover {
       background: #f56565;
     }
+
     .card {
       background: rgba(255, 255, 255, 0.95);
       border-radius: 20px;
@@ -89,6 +102,7 @@
       margin-bottom: 20px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     }
+
     .card h2 {
       color: #333;
       margin-bottom: 20px;
@@ -96,9 +110,11 @@
       border-bottom: 3px solid #1DB954;
       padding-bottom: 10px;
     }
+
     .form-group {
       margin-bottom: 15px;
     }
+
     label {
       display: block;
       margin-bottom: 8px;
@@ -106,7 +122,9 @@
       font-weight: 600;
       font-size: 14px;
     }
-    input, textarea {
+
+    input,
+    textarea {
       width: 100%;
       padding: 12px;
       border: 2px solid #e2e8f0;
@@ -114,11 +132,13 @@
       font-size: 16px;
       font-family: inherit;
     }
+
     input:focus {
       outline: none;
       border-color: #1DB954;
       box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.1);
     }
+
     .search-results {
       max-height: 250px;
       overflow-y: auto;
@@ -128,19 +148,23 @@
       display: none;
       background: #f7fafc;
     }
+
     .search-result {
       padding: 12px;
       cursor: pointer;
       border-bottom: 1px solid #e2e8f0;
       transition: background 0.2s;
     }
+
     .search-result:hover {
       background: #edf2f7;
     }
+
     .search-result strong {
       display: block;
       color: #333;
     }
+
     .search-result .type {
       display: inline-block;
       padding: 2px 6px;
@@ -151,26 +175,32 @@
       background: #1DB954;
       color: white;
     }
+
     .mappings-table {
       width: 100%;
       border-collapse: collapse;
     }
-    .mappings-table th, .mappings-table td {
+
+    .mappings-table th,
+    .mappings-table td {
       padding: 12px;
       text-align: left;
       border-bottom: 1px solid #e2e8f0;
     }
+
     .mappings-table th {
       background: #f7fafc;
       font-weight: 600;
       color: #4a5568;
     }
+
     .mappings-table code {
       background: #edf2f7;
       padding: 2px 6px;
       border-radius: 4px;
       font-family: 'Courier New', monospace;
     }
+
     .delete-btn {
       background: #fc8181;
       color: white;
@@ -180,42 +210,51 @@
       cursor: pointer;
       font-size: 13px;
     }
+
     .delete-btn:hover {
       background: #f56565;
     }
+
     .alert {
       padding: 15px;
       border-radius: 8px;
       margin-bottom: 15px;
       display: none;
     }
+
     .alert.success {
       background: #d4edda;
       color: #155724;
       border: 1px solid #c3e6cb;
     }
+
     .alert.error {
       background: #f8d7da;
       color: #721c24;
       border: 1px solid #f5c6cb;
     }
+
     .alert.show {
       display: block;
     }
+
     .login-prompt {
       text-align: center;
       padding: 60px 20px;
     }
+
     .login-prompt h2 {
       color: white;
       margin-bottom: 20px;
       font-size: 2em;
     }
+
     .login-prompt p {
       color: rgba(255, 255, 255, 0.9);
       margin-bottom: 30px;
       font-size: 1.1em;
     }
+
     .btn-large {
       background: #1DB954;
       color: white;
@@ -229,12 +268,53 @@
       text-decoration: none;
       display: inline-block;
     }
+
     .btn-large:hover {
       background: #1ed760;
       transform: scale(1.05);
     }
+
+    .status-indicator {
+      padding: 20px;
+      text-align: center;
+      background: #f7fafc;
+      border-radius: 10px;
+    }
+
+    .status-emoji {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    .status-text {
+      font-size: 18px;
+      color: #4a5568;
+      margin-bottom: 10px;
+    }
+
+    .status-uid {
+      font-size: 14px;
+      color: #718096;
+      margin-top: 10px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .learning-controls {
+      margin-top: 20px;
+    }
+
+    .learning-status {
+      margin-top: 10px;
+      padding: 10px;
+      text-align: center;
+      display: none;
+      background: #fef5e7;
+      border-radius: 8px;
+      color: #7d6608;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
     {% if authenticated and user_info %}
@@ -255,173 +335,380 @@
     </div>
 
     <div class="card">
-      <h2>➕ Add RFID Mapping</h2>
-      <div id="mapping-alert" class="alert"></div>
-      
-      <div class="form-group">
-        <label>RFID Tag ID</label>
-        <input type="text" id="rfid-input" placeholder="Enter RFID tag ID">
+      <div class="card">
+        <h2>📡 Card Reader Status</h2>
+        <div class="status-indicator">
+          <div class="status-emoji" id="status-emoji">🔴</div>
+          <div class="status-text" id="status-text">No card detected</div>
+          <div class="status-uid" id="status-uid"></div>
+          <div id="status-mapping" style="margin-top: 10px; font-size: 14px;"></div>
+        </div>
+
+        <div class="learning-controls">
+          <button class="btn" id="learning-mode-btn" onclick="toggleLearningMode()" style="width: 100%;">
+            🎯 Enter Learning Mode
+          </button>
+          <div class="learning-status" id="learning-status">
+            Waiting for tag scan...
+          </div>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Search Spotify</label>
-        <input type="text" id="spotify-search" placeholder="Search songs, albums, playlists">
-        <div class="search-results" id="search-results"></div>
+      <div class="card">
+        <h2>🎵 Now Playing</h2>
+        <div id="playback-container" style="text-align: center;">
+          <p>Nothing playing</p>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Track Name</label>
-        <input type="text" id="name-input" placeholder="Will auto-fill" disabled>
+      <div class="card">
+        <h2>🎧 Select Playback Device</h2>
+        <div id="devices-container">
+          <p>Loading devices...</p>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Artist</label>
-        <input type="text" id="artist-input" placeholder="Will auto-fill" disabled>
+      <div class="card">
+        <h2>➕ Add RFID Mapping</h2>
+        <div id="mapping-alert" class="alert"></div>
+
+        <div class="form-group">
+          <label>RFID Tag ID</label>
+          <input type="text" id="rfid-input" placeholder="Enter RFID tag ID or scan in learning mode">
+        </div>
+
+        <div class="form-group">
+          <label>Search Spotify</label>
+          <input type="text" id="spotify-search" placeholder="Search songs, albums, playlists">
+          <div class="search-results" id="search-results"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Track Name</label>
+          <input type="text" id="name-input" placeholder="Will auto-fill" disabled>
+        </div>
+
+        <div class="form-group">
+          <label>Artist</label>
+          <input type="text" id="artist-input" placeholder="Will auto-fill" disabled>
+        </div>
+
+        <button class="btn" onclick="addMapping()">Add Mapping</button>
       </div>
 
-      <button class="btn" onclick="addMapping()">Add Mapping</button>
+      <div class="card">
+        <h2>📋 RFID Mappings</h2>
+        <div id="mappings-container">
+          <p>No mappings yet.</p>
+        </div>
+      </div>
+
+      {% else %}
+      <div class="login-prompt">
+        <h2>🎵 Welcome to Fonie</h2>
+        <p>Connect your Spotify account</p>
+        <a href="/login" class="btn-large">🔗 Connect with Spotify</a>
+      </div>
+      {% endif %}
     </div>
 
-    <div class="card">
-      <h2>📋 RFID Mappings</h2>
-      <div id="mappings-container">
-        <p>No mappings yet.</p>
-      </div>
-    </div>
+    <script>
+      let selectedSpotifyItem = null;
+      let searchTimeout;
+      let learningMode = false;
 
-    {% else %}
-    <div class="login-prompt">
-      <h2>🎵 Welcome to Fonie</h2>
-      <p>Connect your Spotify account</p>
-      <a href="/login" class="btn-large">🔗 Connect with Spotify</a>
-    </div>
-    {% endif %}
-  </div>
+      {% if authenticated %}
+      document.getElementById('spotify-search').addEventListener('input', async (e) => {
+        clearTimeout(searchTimeout);
+        const query = e.target.value;
+        const resultsDiv = document.getElementById('search-results');
 
-  <script>
-    let selectedSpotifyItem = null;
-    let searchTimeout;
-
-    {% if authenticated %}
-    document.getElementById('spotify-search').addEventListener('input', async (e) => {
-      clearTimeout(searchTimeout);
-      const query = e.target.value;
-      const resultsDiv = document.getElementById('search-results');
-      
-      if (query.length < 2) {
-        resultsDiv.style.display = 'none';
-        return;
-      }
-      
-      resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">🔍 Searching...</div>';
-      resultsDiv.style.display = 'block';
-      
-      searchTimeout = setTimeout(async () => {
-        try {
-          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-          const results = await response.json();
-          
-          resultsDiv.innerHTML = '';
-          if (results.length === 0) {
-            resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">No results</div>';
-            return;
-          }
-          
-          results.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'search-result';
-            div.innerHTML = `<strong>${item.name}</strong> - ${item.artist} <span class="type">${item.type}</span>`;
-            div.onclick = () => selectItem(item);
-            resultsDiv.appendChild(div);
-          });
-        } catch (e) {
-          resultsDiv.innerHTML = '<div style="padding: 10px; color: red;">Error</div>';
-        }
-      }, 500);
-    });
-
-    function selectItem(item) {
-      selectedSpotifyItem = item;
-      document.getElementById('spotify-search').value = `${item.name} - ${item.artist}`;
-      document.getElementById('name-input').value = item.name;
-      document.getElementById('artist-input').value = item.artist;
-      document.getElementById('search-results').style.display = 'none';
-    }
-
-    async function addMapping() {
-      const rfid = document.getElementById('rfid-input').value.trim();
-      if (!rfid || !selectedSpotifyItem) {
-        showAlert('Please enter RFID and select a track', 'error');
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/mappings/add', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            rfid_tag: rfid,
-            spotify_uri: selectedSpotifyItem.uri,
-            name: selectedSpotifyItem.name,
-            artist: selectedSpotifyItem.artist
-          })
-        });
-
-        if (response.ok) {
-          showAlert('✅ Mapping added!', 'success');
-          document.getElementById('rfid-input').value = '';
-          document.getElementById('spotify-search').value = '';
-          document.getElementById('name-input').value = '';
-          document.getElementById('artist-input').value = '';
-          selectedSpotifyItem = null;
-          refreshMappings();
-        } else {
-          showAlert('❌ Error adding mapping', 'error');
-        }
-      } catch (e) {
-        showAlert('Connection error', 'error');
-      }
-    }
-
-    async function deleteMapping(rfid) {
-      if (!confirm('Delete?')) return;
-      try {
-        const response = await fetch(`/api/mappings/delete/${rfid}`, {method: 'POST'});
-        if (response.ok) {
-          refreshMappings();
-        }
-      } catch (e) {}
-    }
-
-    async function refreshMappings() {
-      try {
-        const response = await fetch('/api/mappings');
-        const mappings = await response.json();
-        const container = document.getElementById('mappings-container');
-
-        if (Object.keys(mappings).length === 0) {
-          container.innerHTML = '<p>No mappings yet.</p>';
+        if (query.length < 2) {
+          resultsDiv.style.display = 'none';
           return;
         }
 
-        let html = '<table class="mappings-table"><thead><tr><th>RFID</th><th>Track</th><th>Artist</th><th>Action</th></tr></thead><tbody>';
-        for (const [rfid, info] of Object.entries(mappings)) {
-          html += `<tr><td><code>${rfid}</code></td><td>${info.name}</td><td>${info.artist}</td><td><button class="delete-btn" onclick="deleteMapping('${rfid}')">Delete</button></td></tr>`;
+        resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">🔍 Searching...</div>';
+        resultsDiv.style.display = 'block';
+
+        searchTimeout = setTimeout(async () => {
+          try {
+            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const results = await response.json();
+
+            resultsDiv.innerHTML = '';
+            if (results.length === 0) {
+              resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">No results</div>';
+              return;
+            }
+
+            results.forEach(item => {
+              const div = document.createElement('div');
+              div.className = 'search-result';
+              div.innerHTML = `<strong>${item.name}</strong> - ${item.artist} <span class="type">${item.type}</span>`;
+              div.onclick = () => selectItem(item);
+              resultsDiv.appendChild(div);
+            });
+          } catch (e) {
+            resultsDiv.innerHTML = '<div style="padding: 10px; color: red;">Error</div>';
+          }
+        }, 500);
+      });
+
+      function selectItem(item) {
+        selectedSpotifyItem = item;
+        document.getElementById('spotify-search').value = `${item.name} - ${item.artist}`;
+        document.getElementById('name-input').value = item.name;
+        document.getElementById('artist-input').value = item.artist;
+        document.getElementById('search-results').style.display = 'none';
+      }
+
+      async function addMapping() {
+        const rfid = document.getElementById('rfid-input').value.trim();
+        if (!rfid || !selectedSpotifyItem) {
+          showAlert('Please enter RFID and select a track', 'error');
+          return;
         }
-        html += '</tbody></table>';
-        container.innerHTML = html;
-      } catch (e) {}
-    }
 
-    function showAlert(msg, type) {
-      const alert = document.getElementById('mapping-alert');
-      alert.textContent = msg;
-      alert.className = `alert ${type} show`;
-      setTimeout(() => alert.classList.remove('show'), 5000);
-    }
+        try {
+          const response = await fetch('/api/mappings/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              rfid_tag: rfid,
+              spotify_uri: selectedSpotifyItem.uri,
+              name: selectedSpotifyItem.name,
+              artist: selectedSpotifyItem.artist
+            })
+          });
 
-    refreshMappings();
-    {% endif %}
-  </script>
+          if (response.ok) {
+            showAlert('✅ Mapping added!', 'success');
+            document.getElementById('rfid-input').value = '';
+            document.getElementById('spotify-search').value = '';
+            document.getElementById('name-input').value = '';
+            document.getElementById('artist-input').value = '';
+            selectedSpotifyItem = null;
+            refreshMappings();
+          } else {
+            showAlert('❌ Error adding mapping', 'error');
+          }
+        } catch (e) {
+          showAlert('Connection error', 'error');
+        }
+      }
+
+      async function deleteMapping(rfid) {
+        if (!confirm('Delete this mapping?')) return;
+        try {
+          const response = await fetch(`/api/mappings/delete/${rfid}`, { method: 'POST' });
+          if (response.ok) {
+            refreshMappings();
+          }
+        } catch (e) { }
+      }
+
+      async function refreshMappings() {
+        try {
+          const response = await fetch('/api/mappings');
+          const mappings = await response.json();
+          const container = document.getElementById('mappings-container');
+
+          if (Object.keys(mappings).length === 0) {
+            container.innerHTML = '<p>No mappings yet.</p>';
+            return;
+          }
+
+          let html = '<table class="mappings-table"><thead><tr><th>RFID</th><th>Track</th><th>Artist</th><th>Action</th></tr></thead><tbody>';
+          for (const [rfid, info] of Object.entries(mappings)) {
+            html += `<tr><td><code>${rfid}</code></td><td>${info.name}</td><td>${info.artist}</td><td><button class="delete-btn" onclick="deleteMapping('${rfid}')">Delete</button></td></tr>`;
+          }
+          html += '</tbody></table>';
+          container.innerHTML = html;
+        } catch (e) { }
+      }
+
+      function showAlert(msg, type) {
+        const alert = document.getElementById('mapping-alert');
+        alert.textContent = msg;
+        alert.className = `alert ${type} show`;
+        setTimeout(() => alert.classList.remove('show'), 5000);
+      }
+
+      // Poll for tag status
+      // Load mappings once on page load
+      let allMappings = {};
+
+      function refreshMappingsCache() {
+        fetch('/api/mappings')
+          .then(r => r.json())
+          .then(mappings => {
+            allMappings = mappings;
+          });
+      }
+
+      function pollTagStatus() {
+        fetch('/api/current-tag')
+          .then(r => r.json())
+          .then(data => {
+            const emoji = document.getElementById('status-emoji');
+            const text = document.getElementById('status-text');
+            const uid = document.getElementById('status-uid');
+            const mapping = document.getElementById('status-mapping');
+
+            if (data.present) {
+              emoji.textContent = '🟢';
+              text.textContent = 'Card detected!';
+              text.style.color = '#22863a';
+              uid.textContent = `UID: ${data.uid}`;
+              uid.style.display = 'block';
+
+              // Check mapping from cached data
+              if (allMappings[data.uid]) {
+                mapping.innerHTML = `✅ <strong>${allMappings[data.uid].name}</strong> by ${allMappings[data.uid].artist}`;
+                mapping.style.color = '#22863a';
+              } else {
+                mapping.innerHTML = '❌ Unknown tag (not mapped)';
+                mapping.style.color = '#721c24';
+              }
+            } else {
+              emoji.textContent = '🔴';
+              text.textContent = 'No card detected';
+              text.style.color = '#4a5568';
+              uid.textContent = '';
+              uid.style.display = 'none';
+              mapping.innerHTML = '';
+            }
+          });
+      }
+
+      // Refresh cache every 5 seconds
+      setInterval(refreshMappingsCache, 5000);
+      refreshMappingsCache();
+
+      // Poll current playback
+      function pollPlayback() {
+        fetch('/api/current-playback')
+          .then(r => r.json())
+          .then(data => {
+            const container = document.getElementById('playback-container');
+
+            if (!data.playing) {
+              container.innerHTML = '<p style="color: #718096;">Nothing playing</p>';
+              return;
+            }
+
+            const progress = data.progress || 0;
+            const duration = data.duration || 1;
+            const percent = (progress / duration) * 100;
+
+            const progressMins = Math.floor(progress / 60000);
+            const progressSecs = Math.floor((progress % 60000) / 1000);
+            const durationMins = Math.floor(duration / 60000);
+            const durationSecs = Math.floor((duration % 60000) / 1000);
+
+            let html = '<div style="text-align: left;">';
+
+            if (data.image) {
+              html += `<img src="${data.image}" style="width: 100%; max-width: 300px; border-radius: 10px; margin-bottom: 15px;">`;
+            }
+
+            html += `
+            <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 5px;">${data.track_name}</div>
+            <div style="font-size: 14px; color: #718096; margin-bottom: 10px;">${data.artist}</div>
+            <div style="font-size: 12px; color: #a0aec0; margin-bottom: 15px;">${data.album}</div>
+            
+            <div style="background: #e2e8f0; height: 4px; border-radius: 2px; margin-bottom: 8px; overflow: hidden;">
+              <div style="background: #1DB954; height: 100%; width: ${percent}%;"></div>
+            </div>
+            
+            <div style="font-size: 12px; color: #718096; text-align: center;">
+              ${progressMins}:${String(progressSecs).padStart(2, '0')} / ${durationMins}:${String(durationSecs).padStart(2, '0')}
+            </div>
+          `;
+
+            html += '</div>';
+            container.innerHTML = html;
+          });
+      }
+
+      // Start polling playback every 2 seconds
+      setInterval(pollPlayback, 2000);
+      pollPlayback();
+
+      // Load and display available devices
+      function loadDevices() {
+        fetch('/api/devices')
+          .then(r => r.json())
+          .then(devices => {
+            const container = document.getElementById('devices-container');
+
+            if (devices.length === 0) {
+              container.innerHTML = '<p>No devices found. Make sure Spotify is open on a device.</p>';
+              return;
+            }
+
+            let html = '<div style="display: grid; gap: 10px;">';
+            devices.forEach(device => {
+              const active = device.is_active ? '✅' : '⭕';
+              const status = device.is_active ? ' (Currently Active)' : '';
+              html += `
+              <button onclick="setDevice('${device.id}')" style="
+                padding: 12px;
+                background: ${device.is_active ? '#1DB954' : '#f7fafc'};
+                color: ${device.is_active ? 'white' : '#333'};
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+                text-align: left;
+                transition: all 0.2s;
+              " onmouseover="this.style.background='#1DB954'; this.style.color='white';" onmouseout="this.style.background='${device.is_active ? '#1DB954' : '#f7fafc'}'; this.style.color='${device.is_active ? 'white' : '#333'}';">
+                ${active} ${device.name} (${device.type})${status}
+              </button>
+            `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+          });
+      }
+
+      function setDevice(deviceId) {
+        fetch(`/api/set-device/${deviceId}`, { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              showAlert('✅ Device selected!', 'success');
+              loadDevices();
+            }
+          });
+      }
+
+      // Load devices on page load
+      loadDevices();
+
+      function toggleLearningMode() {
+        learningMode = !learningMode;
+        const btn = document.getElementById('learning-mode-btn');
+        const status = document.getElementById('learning-status');
+
+        if (learningMode) {
+          btn.textContent = '⏹️ Exit Learning Mode';
+          btn.style.background = '#fc8181';
+          status.style.display = 'block';
+        } else {
+          btn.textContent = '🎯 Enter Learning Mode';
+          btn.style.background = '#1DB954';
+          status.style.display = 'none';
+        }
+      }
+
+      // Start polling
+      setInterval(pollTagStatus, 500);
+      pollTagStatus();
+      refreshMappings();
+      {% endif %}
+    </script>
 </body>
+
 </html>

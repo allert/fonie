@@ -2,21 +2,22 @@ import os
 import json
 import serial
 import threading
+import sys
 from flask import Flask, render_template, request, redirect, jsonify, url_for
 from spotipy.oauth2 import SpotifyOAuth
 import spotipy
 from datetime import datetime
 import secrets
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
 # Load environment variables
-from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-SERIAL_PORT = '/dev/serial0'
+SERIAL_PORT = '/dev/ttyAMA2'
 SERIAL_BAUD = 115200
 CONFIG_FILE = 'rfid_mappings.json'
 SPOTIFY_CACHE = '.spotifycache'
@@ -30,6 +31,16 @@ SPOTIFY_SCOPE = 'user-read-playback-state user-modify-playback-state user-read-c
 spotify_client = None
 serial_connection = None
 active_rfid_tag = None
+current_tag = {
+    'present': False,
+    'uid': None,
+    'timestamp': None,
+    'mapped': False,
+    'track_name': None,
+    'artist': None
+}
+
+preferred_device_id = None
 
 # ==================== SPOTIFY OAUTH ====================
 def get_spotify_oauth():
@@ -69,44 +80,70 @@ def save_mappings(mappings):
 
 # ==================== SERIAL COMMUNICATION ====================
 def serial_listener():
-    global serial_connection
+    global serial_connection, current_tag
     
     while True:
         try:
             if not serial_connection:
                 serial_connection = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
                 print(f"✅ Connected to ESP32 on {SERIAL_PORT}")
+                sys.stdout.flush()
             
             if serial_connection.in_waiting:
                 line = serial_connection.readline().decode('utf-8').strip()
+                print(f"📨 Raw serial data: {line}")
+                sys.stdout.flush()
                 if line:
                     try:
                         event = json.loads(line)
+                        print(f"✅ Parsed JSON: {event}")
+                        sys.stdout.flush()
                         handle_event(event)
-                    except json.JSONDecodeError:
-                        print(f"❌ Invalid JSON: {line}")
+                    except json.JSONDecodeError as e:
+                        print(f"❌ JSON parse error: {e}")
+                        sys.stdout.flush()
                     
         except serial.SerialException as e:
             print(f"❌ Serial error: {e}")
+            sys.stdout.flush()
             serial_connection = None
             threading.Event().wait(5)
         except Exception as e:
             print(f"❌ Error: {e}")
+            sys.stdout.flush()
             threading.Event().wait(1)
 
 def handle_event(event):
     """Handle JSON events from ESP32"""
-    global spotify_client, active_rfid_tag
+    global spotify_client, active_rfid_tag, current_tag
     
     event_type = event.get('event')
     uid = event.get('uid')
     
+    print(f"🔍 event_type value: '{event_type}' (type: {type(event_type)})")
+    print(f"🔍 Checking: event_type == 'TAG_ON' ? {event_type == 'TAG_ON'}")
+    sys.stdout.flush()
+    
     if event_type == 'TAG_ON':
         print(f"📱 TAG ON: {uid}")
+        mappings = load_mappings()
+        is_mapped = uid in mappings
+        track_name = mappings[uid]['name'] if is_mapped else None
+        artist = mappings[uid]['artist'] if is_mapped else None
+        
+        current_tag = {
+            'present': True,
+            'uid': uid,
+            'timestamp': datetime.now().isoformat(),
+            'mapped': is_mapped,
+            'track_name': track_name,
+            'artist': artist
+        }
         handle_rfid_on(uid)
     
     elif event_type == 'TAG_OFF':
         print(f"📱 TAG OFF: {uid}")
+        current_tag = {'present': False, 'uid': None, 'timestamp': datetime.now().isoformat()}
         handle_rfid_off(uid)
     
     elif event_type == 'READY':
@@ -116,26 +153,33 @@ def handle_rfid_on(uid):
     """Tag placed on reader"""
     global spotify_client, active_rfid_tag
     
-    mappings = load_mappings()
+    print(f"🔵 handle_rfid_on called for UID: {uid}")
+    sys.stdout.flush()
     
-    if active_rfid_tag and active_rfid_tag != uid:
-        try:
-            if spotify_client:
-                spotify_client.pause_playback()
-        except:
-            pass
+    active_rfid_tag = uid
+    
+    mappings = load_mappings()
+    print(f"📋 Loaded {len(mappings)} mappings")
+    sys.stdout.flush()
     
     if uid in mappings:
+        print(f"✅ Tag IS mapped: {mappings[uid]['name']}")
+        sys.stdout.flush()
         track_info = mappings[uid]
         
         if not spotify_client:
             spotify_client = get_spotify_client()
         
         if spotify_client:
+            print(f"🎵 Calling play_spotify_track with URI: {track_info['uri']}")
+            sys.stdout.flush()
             play_spotify_track(spotify_client, track_info['uri'])
-            active_rfid_tag = uid
+        else:
+            print(f"❌ No spotify_client!")
+            sys.stdout.flush()
     else:
-        print(f"⚠️  Unknown tag: {uid}")
+        print(f"❌ Tag NOT mapped")
+        sys.stdout.flush()
 
 def handle_rfid_off(uid):
     """Tag removed from reader"""
@@ -151,25 +195,57 @@ def handle_rfid_off(uid):
 
 def play_spotify_track(sp_client, spotify_uri):
     """Play track on Spotify"""
+    global preferred_device_id
     try:
         devices = sp_client.devices()
         
-        if not devices['devices']:
-            print("❌ No Spotify devices available")
+        if not devices.get('devices'):
+            print("❌ No devices available")
             return False
         
-        device_id = devices['devices'][0]['id']
+        print(f"📋 Found {len(devices['devices'])} device(s)")
+        for d in devices['devices']:
+            print(f"   - {d['name']}")
+        
+        # Try to find Fonie/librespot
+        device_id = None
+        device_name = "Unknown"
+        
+        for device in devices['devices']:
+            if 'librespot' in device['name'].lower() or 'fonie' in device['name'].lower():
+                device_id = device['id']
+                device_name = device['name']
+                print(f"✅ Found Fonie: {device_name}")
+                break
+        
+        # Fallback to preferred device
+        if not device_id and preferred_device_id:
+            for device in devices['devices']:
+                if device['id'] == preferred_device_id:
+                    device_id = device['id']
+                    device_name = device['name']
+                    break
+        
+        # Last resort: first device
+        if not device_id:
+            device_id = devices['devices'][0]['id']
+            device_name = devices['devices'][0]['name']
+            print(f"⚠️  Using first device: {device_name}")
+        
+        print(f"▶️  Playing on: {device_name}")
         
         if spotify_uri.startswith('spotify:album:') or spotify_uri.startswith('spotify:playlist:'):
             sp_client.start_playback(device_id=device_id, context_uri=spotify_uri)
         else:
             sp_client.start_playback(device_id=device_id, uris=[spotify_uri])
         
-        print(f"▶️  Playing: {spotify_uri}")
+        print(f"✅ Playback started!")
         return True
         
     except Exception as e:
-        print(f"❌ Error playing track: {e}")
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # ==================== WEB ROUTES ====================
@@ -194,6 +270,37 @@ def index():
                          user_info=user_info,
                          mappings=mappings)
 
+@app.route('/api/devices')
+def api_devices():
+    global spotify_client
+    
+    try:
+        auth_manager = get_spotify_oauth()
+        token_info = auth_manager.get_cached_token()
+        
+        if token_info and auth_manager.is_token_expired(token_info):
+            print("Token expired, refreshing...")
+            token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
+        
+        spotify_client = spotipy.Spotify(auth_manager=auth_manager)
+        
+        devices = spotify_client.devices()
+        print(f"Found {len(devices.get('devices', []))} devices")
+        for d in devices.get('devices', []):
+            print(f"  - {d['name']}")
+        
+        return jsonify(devices.get('devices', []))
+    except Exception as e:
+        print(f"Error getting devices: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/set-device/<device_id>', methods=['POST'])
+def set_device(device_id):
+    global preferred_device_id
+    preferred_device_id = device_id
+    return jsonify({'success': True, 'device_id': device_id})
+    
+            
 @app.route('/login')
 def login():
     auth_manager = get_spotify_oauth()
@@ -314,6 +421,10 @@ def search():
     except Exception as e:
         print(f"Search error: {e}")
         return jsonify([])
+
+@app.route('/api/current-tag')
+def api_current_tag():
+    return jsonify(current_tag)
 
 @app.route('/api/current-playback')
 def current_playback():
