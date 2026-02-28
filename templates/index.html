@@ -4,711 +4,877 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fonie - RFID Spotify Player</title>
+  <title>Fonie</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap"
+    rel="stylesheet">
   <style>
+    :root {
+      --bg: #0e0e0f;
+      --surface: #18181b;
+      --border: #2a2a2e;
+      --accent: #7eeabc;
+      --accent2: #5bc8ff;
+      --warn: #ffb347;
+      --danger: #ff6b6b;
+      --text: #e8e8ec;
+      --muted: #6b6b78;
+      --radius: 12px;
+    }
+
     * {
+      box-sizing: border-box;
       margin: 0;
       padding: 0;
-      box-sizing: border-box;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: linear-gradient(135deg, #1DB954 0%, #191414 100%);
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
       min-height: 100vh;
-      padding: 20px;
     }
 
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
+    /* ── Layout ── */
+    .app {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
     }
 
-    .header {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    }
-
-    h1 {
-      color: #333;
-      margin-bottom: 20px;
-      font-size: 2.5em;
+    header {
+      grid-column: 1 / -1;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 15px;
+      gap: 16px;
     }
 
-    .auth-section {
+    .logo {
+      font-family: 'DM Mono', monospace;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+
+    .tag-status {
+      margin-left: auto;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 20px;
+      gap: 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      color: var(--muted);
     }
 
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-    }
-
-    .user-avatar {
-      width: 50px;
-      height: 50px;
+    .tag-dot {
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: #1DB954;
+      background: var(--border);
+      transition: background 0.3s;
+    }
+
+    .tag-dot.active {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .tag-dot.unknown {
+      background: var(--warn);
+      box-shadow: 0 0 8px var(--warn);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .sidebar h2 {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Mapping cards ── */
+    .mapping-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mapping-card.active-card {
+      border-color: var(--accent);
+    }
+
+    .mapping-card.downloading {
+      border-color: var(--accent2);
+    }
+
+    .mapping-card.error-card {
+      border-color: var(--danger);
+    }
+
+    .card-top {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: bold;
-      font-size: 20px;
+      align-items: flex-start;
+      gap: 10px;
     }
 
-    .btn {
-      background: #1DB954;
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
+    .card-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .card-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-title {
+      font-weight: 500;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-artist {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-type {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--muted);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .card-type.track {
+      color: var(--accent);
+      background: rgba(126, 234, 188, 0.1);
+    }
+
+    .card-type.album {
+      color: var(--accent2);
+      background: rgba(91, 200, 255, 0.1);
+    }
+
+    .card-type.playlist {
+      color: var(--warn);
+      background: rgba(255, 179, 71, 0.1);
+    }
+
+    .card-uid {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .btn-sm {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
       cursor: pointer;
-      font-size: 16px;
-      font-weight: 600;
-      transition: all 0.3s;
-      text-decoration: none;
-      display: inline-block;
+      transition: all 0.15s;
+      font-family: 'DM Sans', sans-serif;
     }
 
-    .btn:hover {
-      background: #1ed760;
-      transform: translateY(-2px);
+    .btn-sm:hover {
+      border-color: var(--text);
+      color: var(--text);
     }
 
-    .btn.logout {
-      background: #fc8181;
+    .btn-sm.danger:hover {
+      border-color: var(--danger);
+      color: var(--danger);
     }
 
-    .btn.logout:hover {
-      background: #f56565;
+    .progress-bar {
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      margin-top: 10px;
+      overflow: hidden;
     }
 
-    .card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 20px;
-      padding: 30px;
+    .progress-fill {
+      height: 100%;
+      background: var(--accent2);
+      border-radius: 1px;
+      transition: width 0.5s;
+    }
+
+    .status-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      margin-top: 6px;
+    }
+
+    .status-label.downloading {
+      color: var(--accent2);
+    }
+
+    .status-label.ready {
+      color: var(--accent);
+    }
+
+    .status-label.error {
+      color: var(--danger);
+    }
+
+    .status-label.pending {
+      color: var(--muted);
+    }
+
+    /* ── Main area ── */
+    .main {
+      padding: 32px;
+      overflow-y: auto;
+    }
+
+    .main h2 {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
       margin-bottom: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     }
 
-    .card h2 {
-      color: #333;
-      margin-bottom: 20px;
-      font-size: 1.5em;
-      border-bottom: 3px solid #1DB954;
-      padding-bottom: 10px;
+    /* ── Add mapping form ── */
+    .add-form {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
     }
 
     .form-group {
-      margin-bottom: 15px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
     label {
-      display: block;
-      margin-bottom: 8px;
-      color: #4a5568;
-      font-weight: 600;
-      font-size: 14px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      text-transform: uppercase;
     }
 
     input,
-    textarea {
-      width: 100%;
-      padding: 12px;
-      border: 2px solid #e2e8f0;
+    select {
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      font-size: 16px;
-      font-family: inherit;
-    }
-
-    input:focus {
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      padding: 10px 12px;
       outline: none;
-      border-color: #1DB954;
-      box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.1);
-    }
-
-    .search-results {
-      max-height: 250px;
-      overflow-y: auto;
-      border: 2px solid #e2e8f0;
-      border-radius: 8px;
-      margin-top: 10px;
-      display: none;
-      background: #f7fafc;
-    }
-
-    .search-result {
-      padding: 12px;
-      cursor: pointer;
-      border-bottom: 1px solid #e2e8f0;
-      transition: background 0.2s;
-    }
-
-    .search-result:hover {
-      background: #edf2f7;
-    }
-
-    .search-result strong {
-      display: block;
-      color: #333;
-    }
-
-    .search-result .type {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      margin-left: 10px;
-      background: #1DB954;
-      color: white;
-    }
-
-    .mappings-table {
+      transition: border-color 0.15s;
       width: 100%;
-      border-collapse: collapse;
     }
 
-    .mappings-table th,
-    .mappings-table td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #e2e8f0;
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
     }
 
-    .mappings-table th {
-      background: #f7fafc;
-      font-weight: 600;
-      color: #4a5568;
+    input::placeholder {
+      color: var(--muted);
     }
 
-    .mappings-table code {
-      background: #edf2f7;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: 'Courier New', monospace;
-    }
-
-    .delete-btn {
-      background: #fc8181;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 4px;
-      cursor: pointer;
+    .uid-field {
+      font-family: 'DM Mono', monospace;
       font-size: 13px;
     }
 
-    .delete-btn:hover {
-      background: #f56565;
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
     }
 
-    .alert {
-      padding: 15px;
+    .btn-primary {
+      background: var(--accent);
+      color: #0e0e0f;
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Search results ── */
+    .search-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+    }
+
+    .filter-tab {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      transition: all 0.15s;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .filter-tab.active {
+      background: var(--accent);
+      color: #0e0e0f;
+      border-color: var(--accent);
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .result-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .result-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .result-card.selected {
+      border-color: var(--accent);
+      background: rgba(126, 234, 188, 0.05);
+    }
+
+    .result-thumb {
+      width: 100%;
+      aspect-ratio: 1;
       border-radius: 8px;
-      margin-bottom: 15px;
+      object-fit: cover;
+      background: var(--border);
+      margin-bottom: 10px;
+    }
+
+    .result-type {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .result-type.track {
+      color: var(--accent);
+    }
+
+    .result-type.album {
+      color: var(--accent2);
+    }
+
+    .result-type.playlist {
+      color: var(--warn);
+    }
+
+    .result-title {
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 2px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .result-artist {
+      font-size: 11px;
+      color: var(--muted);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .selected-summary {
+      background: rgba(126, 234, 188, 0.08);
+      border: 1px solid rgba(126, 234, 188, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      font-size: 13px;
       display: none;
     }
 
-    .alert.success {
-      background: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-
-    .alert.error {
-      background: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    .alert.show {
+    .selected-summary.visible {
       display: block;
     }
 
-    .login-prompt {
+    .selected-summary strong {
+      color: var(--accent);
+    }
+
+    .empty-state {
       text-align: center;
-      padding: 60px 20px;
+      padding: 40px;
+      color: var(--muted);
+      font-size: 13px;
     }
 
-    .login-prompt h2 {
-      color: white;
-      margin-bottom: 20px;
-      font-size: 2em;
+    /* ── Now playing banner ── */
+    .now-playing {
+      background: rgba(126, 234, 188, 0.06);
+      border: 1px solid rgba(126, 234, 188, 0.15);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: none;
+      align-items: center;
+      gap: 14px;
     }
 
-    .login-prompt p {
-      color: rgba(255, 255, 255, 0.9);
-      margin-bottom: 30px;
-      font-size: 1.1em;
+    .now-playing.visible {
+      display: flex;
     }
 
-    .btn-large {
-      background: #1DB954;
-      color: white;
-      border: none;
-      padding: 15px 40px;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 18px;
-      font-weight: 600;
-      transition: all 0.3s;
-      text-decoration: none;
+    .np-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.5s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.5;
+        transform: scale(0.8);
+      }
+    }
+
+    .np-text {
+      flex: 1;
+    }
+
+    .np-title {
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .np-artist {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    /* ── Loading ── */
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
       display: inline-block;
     }
 
-    .btn-large:hover {
-      background: #1ed760;
-      transform: scale(1.05);
-    }
-
-    .status-indicator {
-      padding: 20px;
-      text-align: center;
-      background: #f7fafc;
-      border-radius: 10px;
-    }
-
-    .status-emoji {
-      font-size: 48px;
-      margin-bottom: 10px;
-    }
-
-    .status-text {
-      font-size: 18px;
-      color: #4a5568;
-      margin-bottom: 10px;
-    }
-
-    .status-uid {
-      font-size: 14px;
-      color: #718096;
-      margin-top: 10px;
-      font-family: 'Courier New', monospace;
-    }
-
-    .learning-controls {
-      margin-top: 20px;
-    }
-
-    .learning-status {
-      margin-top: 10px;
-      padding: 10px;
-      text-align: center;
-      display: none;
-      background: #fef5e7;
-      border-radius: 8px;
-      color: #7d6608;
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    {% if authenticated and user_info %}
-    <div class="header">
-      <h1>🎵 Fonie</h1>
-      <div class="auth-section">
-        <div class="user-info">
-          <div class="user-avatar">
-            {{ user_info.display_name[0].upper() if user_info.display_name else '🎵' }}
+  <div class="app">
+
+    <header>
+      <div class="logo">fonie</div>
+      <div class="tag-status">
+        <div class="tag-dot" id="tagDot"></div>
+        <span id="tagLabel">no tag</span>
+      </div>
+    </header>
+
+    <!-- Sidebar: mappings -->
+    <aside class="sidebar">
+      <h2>Mappings</h2>
+      <div id="mappingsList">
+        <div class="empty-state">No mappings yet</div>
+      </div>
+    </aside>
+
+    <!-- Main: add mapping -->
+    <main class="main">
+      <div class="now-playing" id="nowPlaying">
+        <div class="np-dot"></div>
+        <div class="np-text">
+          <div class="np-title" id="npTitle">—</div>
+          <div class="np-artist" id="npArtist">—</div>
+        </div>
+      </div>
+
+      <h2>Add Mapping</h2>
+      <div class="add-form">
+
+        <!-- UID row -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tag UID</label>
+            <input type="text" id="uidInput" class="uid-field" placeholder="Scan a tag or enter manually…">
           </div>
-          <div>
-            <strong>{{ user_info.display_name or 'Spotify User' }}</strong><br>
-            <small>✅ Connected</small>
+        </div>
+
+        <!-- Search row -->
+        <div class="search-bar">
+          <input type="text" id="searchInput" placeholder="Search YouTube Music…" style="flex:1">
+          <button class="btn btn-ghost" onclick="doSearch()">Search</button>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="filter-tabs">
+          <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
+          <button class="filter-tab" onclick="setFilter('track', this)">Tracks</button>
+          <button class="filter-tab" onclick="setFilter('album', this)">Albums</button>
+          <button class="filter-tab" onclick="setFilter('playlist', this)">Playlists</button>
+        </div>
+
+        <!-- Results -->
+        <div class="results-grid" id="resultsGrid">
+          <div class="empty-state" style="grid-column:1/-1">Search for something to map</div>
+        </div>
+
+        <!-- Selected summary -->
+        <div class="selected-summary" id="selectedSummary"></div>
+
+        <!-- Submit -->
+        <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-primary" id="addBtn" onclick="addMapping()" disabled>Map to tag</button>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    let selectedResult = null;
+    let currentFilter = 'all';
+    let currentTag = null;
+
+    // ── Tag polling ───────────────────────────────────────────────────────────────
+    async function pollTag() {
+      try {
+        const r = await fetch('/api/current-tag');
+        const t = await r.json();
+        const dot = document.getElementById('tagDot');
+        const label = document.getElementById('tagLabel');
+
+        if (t.present) {
+          currentTag = t;
+          dot.className = 'tag-dot ' + (t.mapped ? 'active' : 'unknown');
+          label.textContent = t.uid;
+
+          // Pre-fill UID field if empty
+          const uidInput = document.getElementById('uidInput');
+          if (!uidInput.value) uidInput.value = t.uid;
+
+          // Now playing
+          if (t.mapped && t.title) {
+            document.getElementById('nowPlaying').classList.add('visible');
+            document.getElementById('npTitle').textContent = t.title;
+            document.getElementById('npArtist').textContent = t.artist || '—';
+          }
+        } else {
+          currentTag = null;
+          dot.className = 'tag-dot';
+          label.textContent = 'no tag';
+          document.getElementById('nowPlaying').classList.remove('visible');
+        }
+      } catch (e) { }
+    }
+
+    // ── Mappings polling ──────────────────────────────────────────────────────────
+    async function pollMappings() {
+      try {
+        const r = await fetch('/api/mappings');
+        const mappings = await r.json();
+        renderMappings(mappings);
+      } catch (e) { }
+    }
+
+    function renderMappings(mappings) {
+      const el = document.getElementById('mappingsList');
+      const keys = Object.keys(mappings);
+      if (!keys.length) {
+        el.innerHTML = '<div class="empty-state">No mappings yet</div>';
+        return;
+      }
+
+      el.innerHTML = keys.map(uid => {
+        const m = mappings[uid];
+        const isActive = currentTag && currentTag.uid === uid;
+        const statusClass = m.status === 'error' ? 'error-card'
+          : m.status === 'downloading' ? 'downloading' : '';
+        const activeClass = isActive ? 'active-card' : '';
+
+        const progressBar = m.status === 'downloading' ? `
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${m.progress || 0}%"></div>
+      </div>
+      <div class="status-label downloading">Downloading… ${m.progress || 0}%</div>
+    ` : m.status === 'ready' ? `
+      <div class="status-label ready">✓ Ready</div>
+    ` : m.status === 'error' ? `
+      <div class="status-label error">✗ ${m.error || 'Download failed'}</div>
+    ` : `<div class="status-label pending">Pending…</div>`;
+
+        const retryBtn = m.status === 'error'
+          ? `<button class="btn-sm" onclick="retryMapping('${uid}')">Retry</button>` : '';
+
+        return `
+      <div class="mapping-card ${activeClass} ${statusClass}">
+        <div class="card-top">
+          <div class="card-info">
+            <div class="card-title">${m.title || '—'}</div>
+            <div class="card-artist">${m.artist || '—'}</div>
           </div>
+          <span class="card-type ${m.type}">${m.type}</span>
         </div>
-        <a href="/logout" class="btn logout">Logout</a>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card">
-        <h2>📡 Card Reader Status</h2>
-        <div class="status-indicator">
-          <div class="status-emoji" id="status-emoji">🔴</div>
-          <div class="status-text" id="status-text">No card detected</div>
-          <div class="status-uid" id="status-uid"></div>
-          <div id="status-mapping" style="margin-top: 10px; font-size: 14px;"></div>
-        </div>
-
-        <div class="learning-controls">
-          <button class="btn" id="learning-mode-btn" onclick="toggleLearningMode()" style="width: 100%;">
-            🎯 Enter Learning Mode
-          </button>
-          <div class="learning-status" id="learning-status">
-            Waiting for tag scan...
-          </div>
+        <div class="card-uid">${uid}</div>
+        ${progressBar}
+        <div class="card-actions">
+          ${retryBtn}
+          <button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button>
         </div>
       </div>
+    `;
+      }).join('');
+    }
 
-      <div class="card">
-        <h2>🎵 Now Playing</h2>
-        <div id="playback-container" style="text-align: center;">
-          <p>Nothing playing</p>
-        </div>
-      </div>
+    // ── Search ────────────────────────────────────────────────────────────────────
+    function setFilter(f, el) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+    }
 
-      <div class="card">
-        <h2>🎧 Select Playback Device</h2>
-        <div id="devices-container">
-          <p>Loading devices...</p>
-        </div>
-      </div>
+    async function doSearch() {
+      const q = document.getElementById('searchInput').value.trim();
+      if (!q) return;
 
-      <div class="card">
-        <h2>➕ Add RFID Mapping</h2>
-        <div id="mapping-alert" class="alert"></div>
+      const grid = document.getElementById('resultsGrid');
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="spinner"></div></div>';
 
-        <div class="form-group">
-          <label>RFID Tag ID</label>
-          <input type="text" id="rfid-input" placeholder="Enter RFID tag ID or scan in learning mode">
-        </div>
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&type=${currentFilter}`);
+        const results = await r.json();
 
-        <div class="form-group">
-          <label>Search Spotify</label>
-          <input type="text" id="spotify-search" placeholder="Search songs, albums, playlists">
-          <div class="search-results" id="search-results"></div>
-        </div>
-
-        <div class="form-group">
-          <label>Track Name</label>
-          <input type="text" id="name-input" placeholder="Will auto-fill" disabled>
-        </div>
-
-        <div class="form-group">
-          <label>Artist</label>
-          <input type="text" id="artist-input" placeholder="Will auto-fill" disabled>
-        </div>
-
-        <button class="btn" onclick="addMapping()">Add Mapping</button>
-      </div>
-
-      <div class="card">
-        <h2>📋 RFID Mappings</h2>
-        <div id="mappings-container">
-          <p>No mappings yet.</p>
-        </div>
-      </div>
-
-      {% else %}
-      <div class="login-prompt">
-        <h2>🎵 Welcome to Fonie</h2>
-        <p>Connect your Spotify account</p>
-        <a href="/login" class="btn-large">🔗 Connect with Spotify</a>
-      </div>
-      {% endif %}
-    </div>
-
-    <script>
-      let selectedSpotifyItem = null;
-      let searchTimeout;
-      let learningMode = false;
-
-      {% if authenticated %}
-      document.getElementById('spotify-search').addEventListener('input', async (e) => {
-        clearTimeout(searchTimeout);
-        const query = e.target.value;
-        const resultsDiv = document.getElementById('search-results');
-
-        if (query.length < 2) {
-          resultsDiv.style.display = 'none';
+        if (!results.length) {
+          grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No results found</div>';
           return;
         }
 
-        resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">🔍 Searching...</div>';
-        resultsDiv.style.display = 'block';
+        grid.innerHTML = results.map((item, i) => `
+      <div class="result-card" onclick="selectResult(${i})" data-index="${i}">
+        <img class="result-thumb" src="${item.thumbnail || ''}" onerror="this.style.display='none'">
+        <div class="result-type ${item.type}">${item.type}</div>
+        <div class="result-title">${item.title}</div>
+        <div class="result-artist">${item.artist}${item.duration ? ' · ' + item.duration : ''}${item.year ? ' · ' + item.year : ''}${item.count ? ' · ' + item.count + ' tracks' : ''}</div>
+      </div>
+    `).join('');
 
-        searchTimeout = setTimeout(async () => {
-          try {
-            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-            const results = await response.json();
+        // Store results
+        grid._results = results;
+        selectedResult = null;
+        document.getElementById('selectedSummary').classList.remove('visible');
+        document.getElementById('addBtn').disabled = true;
 
-            resultsDiv.innerHTML = '';
-            if (results.length === 0) {
-              resultsDiv.innerHTML = '<div style="padding: 10px; text-align: center;">No results</div>';
-              return;
-            }
+      } catch (e) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">Search failed</div>';
+      }
+    }
 
-            results.forEach(item => {
-              const div = document.createElement('div');
-              div.className = 'search-result';
-              div.innerHTML = `<strong>${item.name}</strong> - ${item.artist} <span class="type">${item.type}</span>`;
-              div.onclick = () => selectItem(item);
-              resultsDiv.appendChild(div);
-            });
-          } catch (e) {
-            resultsDiv.innerHTML = '<div style="padding: 10px; color: red;">Error</div>';
-          }
-        }, 500);
+    function selectResult(i) {
+      const grid = document.getElementById('resultsGrid');
+      const results = grid._results;
+      if (!results) return;
+
+      selectedResult = results[i];
+      document.querySelectorAll('.result-card').forEach((c, idx) => {
+        c.classList.toggle('selected', idx === i);
       });
 
-      function selectItem(item) {
-        selectedSpotifyItem = item;
-        document.getElementById('spotify-search').value = `${item.name} - ${item.artist}`;
-        document.getElementById('name-input').value = item.name;
-        document.getElementById('artist-input').value = item.artist;
-        document.getElementById('search-results').style.display = 'none';
-      }
+      const summary = document.getElementById('selectedSummary');
+      summary.classList.add('visible');
+      summary.innerHTML = `
+    <strong>${selectedResult.title}</strong> by ${selectedResult.artist}
+    <span style="color:var(--muted);margin-left:8px;">${selectedResult.type}</span>
+  `;
 
-      async function addMapping() {
-        const rfid = document.getElementById('rfid-input').value.trim();
-        if (!rfid || !selectedSpotifyItem) {
-          showAlert('Please enter RFID and select a track', 'error');
-          return;
+      document.getElementById('addBtn').disabled = !document.getElementById('uidInput').value.trim();
+    }
+
+    // Allow pressing Enter to search
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('searchInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') doSearch();
+      });
+      document.getElementById('uidInput').addEventListener('input', () => {
+        document.getElementById('addBtn').disabled = !document.getElementById('uidInput').value.trim() || !selectedResult;
+      });
+    });
+
+    // ── Mapping CRUD ──────────────────────────────────────────────────────────────
+    async function addMapping() {
+      const uid = document.getElementById('uidInput').value.trim();
+      if (!uid || !selectedResult) return;
+
+      const btn = document.getElementById('addBtn');
+      btn.disabled = true;
+      btn.textContent = 'Mapping…';
+
+      try {
+        const r = await fetch('/api/mappings/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid, ...selectedResult })
+        });
+        const data = await r.json();
+        if (data.success) {
+          document.getElementById('uidInput').value = '';
+          selectedResult = null;
+          document.getElementById('selectedSummary').classList.remove('visible');
+          document.getElementById('resultsGrid').innerHTML = '<div class="empty-state" style="grid-column:1/-1">Search for something to map</div>';
+          pollMappings();
         }
+      } catch (e) { }
 
-        try {
-          const response = await fetch('/api/mappings/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              rfid_tag: rfid,
-              spotify_uri: selectedSpotifyItem.uri,
-              name: selectedSpotifyItem.name,
-              artist: selectedSpotifyItem.artist
-            })
-          });
+      btn.textContent = 'Map to tag';
+      btn.disabled = false;
+    }
 
-          if (response.ok) {
-            showAlert('✅ Mapping added!', 'success');
-            document.getElementById('rfid-input').value = '';
-            document.getElementById('spotify-search').value = '';
-            document.getElementById('name-input').value = '';
-            document.getElementById('artist-input').value = '';
-            selectedSpotifyItem = null;
-            refreshMappings();
-          } else {
-            showAlert('❌ Error adding mapping', 'error');
-          }
-        } catch (e) {
-          showAlert('Connection error', 'error');
-        }
-      }
+    async function deleteMapping(uid) {
+      if (!confirm('Delete this mapping?')) return;
+      await fetch(`/api/mappings/delete/${uid}`, { method: 'POST' });
+      pollMappings();
+    }
 
-      async function deleteMapping(rfid) {
-        if (!confirm('Delete this mapping?')) return;
-        try {
-          const response = await fetch(`/api/mappings/delete/${rfid}`, { method: 'POST' });
-          if (response.ok) {
-            refreshMappings();
-          }
-        } catch (e) { }
-      }
+    async function retryMapping(uid) {
+      await fetch(`/api/mappings/retry/${uid}`, { method: 'POST' });
+      pollMappings();
+    }
 
-      async function refreshMappings() {
-        try {
-          const response = await fetch('/api/mappings');
-          const mappings = await response.json();
-          const container = document.getElementById('mappings-container');
-
-          if (Object.keys(mappings).length === 0) {
-            container.innerHTML = '<p>No mappings yet.</p>';
-            return;
-          }
-
-          let html = '<table class="mappings-table"><thead><tr><th>RFID</th><th>Track</th><th>Artist</th><th>Action</th></tr></thead><tbody>';
-          for (const [rfid, info] of Object.entries(mappings)) {
-            html += `<tr><td><code>${rfid}</code></td><td>${info.name}</td><td>${info.artist}</td><td><button class="delete-btn" onclick="deleteMapping('${rfid}')">Delete</button></td></tr>`;
-          }
-          html += '</tbody></table>';
-          container.innerHTML = html;
-        } catch (e) { }
-      }
-
-      function showAlert(msg, type) {
-        const alert = document.getElementById('mapping-alert');
-        alert.textContent = msg;
-        alert.className = `alert ${type} show`;
-        setTimeout(() => alert.classList.remove('show'), 5000);
-      }
-
-      // Poll for tag status
-      // Load mappings once on page load
-      let allMappings = {};
-
-      function refreshMappingsCache() {
-        fetch('/api/mappings')
-          .then(r => r.json())
-          .then(mappings => {
-            allMappings = mappings;
-          });
-      }
-
-      function pollTagStatus() {
-        fetch('/api/current-tag')
-          .then(r => r.json())
-          .then(data => {
-            const emoji = document.getElementById('status-emoji');
-            const text = document.getElementById('status-text');
-            const uid = document.getElementById('status-uid');
-            const mapping = document.getElementById('status-mapping');
-
-            if (data.present) {
-              emoji.textContent = '🟢';
-              text.textContent = 'Card detected!';
-              text.style.color = '#22863a';
-              uid.textContent = `UID: ${data.uid}`;
-              uid.style.display = 'block';
-
-              // Check mapping from cached data
-              if (allMappings[data.uid]) {
-                mapping.innerHTML = `✅ <strong>${allMappings[data.uid].name}</strong> by ${allMappings[data.uid].artist}`;
-                mapping.style.color = '#22863a';
-              } else {
-                mapping.innerHTML = '❌ Unknown tag (not mapped)';
-                mapping.style.color = '#721c24';
-              }
-            } else {
-              emoji.textContent = '🔴';
-              text.textContent = 'No card detected';
-              text.style.color = '#4a5568';
-              uid.textContent = '';
-              uid.style.display = 'none';
-              mapping.innerHTML = '';
-            }
-          });
-      }
-
-      // Refresh cache every 5 seconds
-      setInterval(refreshMappingsCache, 5000);
-      refreshMappingsCache();
-
-      // Poll current playback
-      function pollPlayback() {
-        fetch('/api/current-playback')
-          .then(r => r.json())
-          .then(data => {
-            const container = document.getElementById('playback-container');
-
-            if (!data.playing) {
-              container.innerHTML = '<p style="color: #718096;">Nothing playing</p>';
-              return;
-            }
-
-            const progress = data.progress || 0;
-            const duration = data.duration || 1;
-            const percent = (progress / duration) * 100;
-
-            const progressMins = Math.floor(progress / 60000);
-            const progressSecs = Math.floor((progress % 60000) / 1000);
-            const durationMins = Math.floor(duration / 60000);
-            const durationSecs = Math.floor((duration % 60000) / 1000);
-
-            let html = '<div style="text-align: left;">';
-
-            if (data.image) {
-              html += `<img src="${data.image}" style="width: 100%; max-width: 300px; border-radius: 10px; margin-bottom: 15px;">`;
-            }
-
-            html += `
-            <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 5px;">${data.track_name}</div>
-            <div style="font-size: 14px; color: #718096; margin-bottom: 10px;">${data.artist}</div>
-            <div style="font-size: 12px; color: #a0aec0; margin-bottom: 15px;">${data.album}</div>
-            
-            <div style="background: #e2e8f0; height: 4px; border-radius: 2px; margin-bottom: 8px; overflow: hidden;">
-              <div style="background: #1DB954; height: 100%; width: ${percent}%;"></div>
-            </div>
-            
-            <div style="font-size: 12px; color: #718096; text-align: center;">
-              ${progressMins}:${String(progressSecs).padStart(2, '0')} / ${durationMins}:${String(durationSecs).padStart(2, '0')}
-            </div>
-          `;
-
-            html += '</div>';
-            container.innerHTML = html;
-          });
-      }
-
-      // Start polling playback every 2 seconds
-      setInterval(pollPlayback, 2000);
-      pollPlayback();
-
-      // Load and display available devices
-      function loadDevices() {
-        fetch('/api/devices')
-          .then(r => r.json())
-          .then(devices => {
-            const container = document.getElementById('devices-container');
-
-            if (devices.length === 0) {
-              container.innerHTML = '<p>No devices found. Make sure Spotify is open on a device.</p>';
-              return;
-            }
-
-            let html = '<div style="display: grid; gap: 10px;">';
-            devices.forEach(device => {
-              const active = device.is_active ? '✅' : '⭕';
-              const status = device.is_active ? ' (Currently Active)' : '';
-              html += `
-              <button onclick="setDevice('${device.id}')" style="
-                padding: 12px;
-                background: ${device.is_active ? '#1DB954' : '#f7fafc'};
-                color: ${device.is_active ? 'white' : '#333'};
-                border: 2px solid #e2e8f0;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 16px;
-                text-align: left;
-                transition: all 0.2s;
-              " onmouseover="this.style.background='#1DB954'; this.style.color='white';" onmouseout="this.style.background='${device.is_active ? '#1DB954' : '#f7fafc'}'; this.style.color='${device.is_active ? 'white' : '#333'}';">
-                ${active} ${device.name} (${device.type})${status}
-              </button>
-            `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-          });
-      }
-
-      function setDevice(deviceId) {
-        fetch(`/api/set-device/${deviceId}`, { method: 'POST' })
-          .then(r => r.json())
-          .then(data => {
-            if (data.success) {
-              showAlert('✅ Device selected!', 'success');
-              loadDevices();
-            }
-          });
-      }
-
-      // Load devices on page load
-      loadDevices();
-
-      function toggleLearningMode() {
-        learningMode = !learningMode;
-        const btn = document.getElementById('learning-mode-btn');
-        const status = document.getElementById('learning-status');
-
-        if (learningMode) {
-          btn.textContent = '⏹️ Exit Learning Mode';
-          btn.style.background = '#fc8181';
-          status.style.display = 'block';
-        } else {
-          btn.textContent = '🎯 Enter Learning Mode';
-          btn.style.background = '#1DB954';
-          status.style.display = 'none';
-        }
-      }
-
-      // Start polling
-      setInterval(pollTagStatus, 500);
-      pollTagStatus();
-      refreshMappings();
-      {% endif %}
-    </script>
+    // ── Polling ───────────────────────────────────────────────────────────────────
+    setInterval(pollTag, 1000);
+    setInterval(pollMappings, 2000);
+    pollTag();
+    pollMappings();
+  </script>
 </body>
 
 </html>

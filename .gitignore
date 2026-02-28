@@ -7,3 +7,4 @@ rfid_mappings.json
 cert.pem
 key.pem
 *.img
+*.wav

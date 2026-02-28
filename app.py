@@ -3,47 +3,50 @@ import json
 import serial
 import threading
 import sys
-from flask import Flask, render_template, request, redirect, jsonify, url_for
-from spotipy.oauth2 import SpotifyOAuth
-import spotipy
+import subprocess
+import time
+from flask import Flask, render_template, request, redirect, jsonify
 from datetime import datetime
 import secrets
-from dotenv import load_dotenv
+from ytmusicapi import YTMusic
+import yt_dlp
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
-load_dotenv()
+# ── Config ────────────────────────────────────────────────────────────────────
+ESP32_PORT   = '/dev/ttyAMA2'
+PICO_PORT    = '/dev/ttyAMA5'
+SERIAL_BAUD  = 115200
+MEDIA_DIR    = os.path.expanduser('~/rfid-player/media')
+MAPPINGS_FILE = os.path.expanduser('~/rfid-player/rfid_mappings.json')
+SOUNDS_DIR   = os.path.expanduser('~/rfid-player/sounds')
+AUDIO_DEVICE = 'hw:2,0'
 
-# ── Serial ports ──────────────────────────────────────────────────────────────
-ESP32_PORT  = '/dev/ttyAMA2'   # GPIO4/5  – UART3
-PICO_PORT   = '/dev/ttyAMA5'   # GPIO12/13  – UART5
-SERIAL_BAUD = 115200
-
-CONFIG_FILE    = 'rfid_mappings.json'
-SPOTIFY_CACHE  = '.spotifycache'
-
-SPOTIFY_CLIENT_ID     = os.environ.get('SPOTIFY_CLIENT_ID')
-SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET')
-SPOTIFY_REDIRECT_URI  = os.environ.get('SPOTIFY_REDIRECT_URI', 'https://fonie2.local:5000/callback')
-SPOTIFY_SCOPE = ('user-read-playback-state user-modify-playback-state '
-                 'user-read-currently-playing streaming')
+os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # ── Global state ──────────────────────────────────────────────────────────────
-spotify_client      = None
-esp32_serial        = None
-pico_serial         = None
-active_rfid_tag     = None
-current_tag = {
-    'present': False, 'uid': None, 'timestamp': None,
-    'mapped': False, 'track_name': None, 'artist': None
-}
-preferred_device_id = None
+esp32_serial   = None
+pico_serial    = None
+active_rfid_tag = None
+current_tag    = {'present': False, 'uid': None, 'timestamp': None}
+mpv_process    = None
+download_queue = {}   # uid -> {status, progress, error}
+ytmusic        = YTMusic()
 
+# ── Mappings ──────────────────────────────────────────────────────────────────
+def load_mappings():
+    if os.path.exists(MAPPINGS_FILE):
+        with open(MAPPINGS_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_mappings(mappings):
+    with open(MAPPINGS_FILE, 'w') as f:
+        json.dump(mappings, f, indent=2)
 
 # ── Pico communication ────────────────────────────────────────────────────────
-def send_pico_event(event: str, **kwargs):
-    """Send a semantic event to the Pico over UART."""
+def send_pico(event, **kwargs):
     global pico_serial
     if not pico_serial:
         return
@@ -62,14 +65,13 @@ def pico_connect():
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
         print(f"✅ Pico connected on {PICO_PORT}")
         sys.stdout.flush()
-        send_pico_event("READY")
+        send_pico("READY")
     except Exception as e:
         print(f"⚠️  Pico not connected: {e}")
         sys.stdout.flush()
         pico_serial = None
 
 def pico_listener():
-    """Optional: listen for messages from Pico (button presses, acks, etc.)"""
     global pico_serial
     while True:
         try:
@@ -82,10 +84,6 @@ def pico_listener():
                 if line:
                     print(f"← Pico: {line}")
                     sys.stdout.flush()
-                    try:
-                        handle_pico_message(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
         except serial.SerialException as e:
             print(f"❌ Pico serial error: {e}")
             pico_serial = None
@@ -94,49 +92,123 @@ def pico_listener():
             print(f"❌ Pico error: {e}")
             threading.Event().wait(1)
 
-def handle_pico_message(msg):
-    """Handle messages coming FROM the Pico (buttons, etc.)"""
-    event = msg.get('event')
-    if event == 'BUTTON':
-        btn = msg.get('button')
-        print(f"🔘 Button pressed: {btn}")
-        # TODO: handle button actions
+# ── Audio playback ────────────────────────────────────────────────────────────
+def play_sound(filename):
+    path = os.path.join(SOUNDS_DIR, filename)
+    if not os.path.exists(path):
+        return
+    try:
+        subprocess.run(
+            ['aplay', '-D', AUDIO_DEVICE, path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )  # run instead of Popen — blocks until done
+    except Exception as e:
+        print(f"❌ Sound error: {e}")
 
+def play_mapping(mapping):
+    global mpv_process
+    stop_playback()
+    
+    media_path = mapping.get('media_path')
+    if not media_path or not os.path.exists(media_path):
+        print(f"❌ Media path not found: {media_path}")
+        return
 
-# ── Spotify OAuth ─────────────────────────────────────────────────────────────
-def get_spotify_oauth():
-    return SpotifyOAuth(
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET,
-        redirect_uri=SPOTIFY_REDIRECT_URI,
-        scope=SPOTIFY_SCOPE,
-        cache_path=SPOTIFY_CACHE,
-        open_browser=False
+    tracks = sorted([
+        os.path.join(media_path, f)
+        for f in os.listdir(media_path)
+        if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+    ])
+
+    if not tracks:
+        print("❌ No tracks found")
+        return
+
+    print(f"▶️  Playing {len(tracks)} track(s) from {media_path}")
+    mpv_process = subprocess.Popen(
+        ['mpv', '--no-video'] + tracks,  # no audio-device flag
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
     )
+    send_pico("PLAYING")
 
-def get_spotify_client():
-    global spotify_client
-    auth_manager = get_spotify_oauth()
-    token_info = auth_manager.get_cached_token()
-    if not token_info:
-        return None
-    if auth_manager.is_token_expired(token_info):
-        token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
-    spotify_client = spotipy.Spotify(auth_manager=auth_manager)
-    return spotify_client
+def stop_playback():
+    global mpv_process
+    if mpv_process and mpv_process.poll() is None:
+        mpv_process.terminate()
+        mpv_process = None
 
 
-# ── RFID mappings ─────────────────────────────────────────────────────────────
-def load_mappings():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as f:
-            return json.load(f)
-    return {}
+# ── Download queue ────────────────────────────────────────────────────────────
+def download_mapping(uid, mapping):
+    """Download audio for a mapping in the background."""
+    media_path = os.path.join(MEDIA_DIR, uid)
+    os.makedirs(media_path, exist_ok=True)
 
-def save_mappings(mappings):
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(mappings, f, indent=2)
+    download_queue[uid] = {'status': 'downloading', 'progress': 0, 'error': None}
 
+    ytmusic_id = mapping.get('ytmusic_id')
+    mtype      = mapping.get('type', 'track')
+
+    if mtype == 'track':
+        urls = [f'https://music.youtube.com/watch?v={ytmusic_id}']
+    else:
+        # album or playlist — fetch all track IDs
+        try:
+            if mtype == 'album':
+                info = ytmusic.get_album(ytmusic_id)
+                urls = [f'https://music.youtube.com/watch?v={t["videoId"]}'
+                        for t in info['tracks'] if t.get('videoId')]
+            else:
+                info = ytmusic.get_playlist(ytmusic_id, limit=100)
+                urls = [f'https://music.youtube.com/watch?v={t["videoId"]}'
+                        for t in info['tracks'] if t.get('videoId')]
+        except Exception as e:
+            print(f"❌ Failed to fetch track list: {e}")
+            download_queue[uid] = {'status': 'error', 'progress': 0, 'error': str(e)}
+            return
+
+    total  = len(urls)
+    done   = 0
+    errors = []
+
+    ydl_opts = {
+        'format':     'bestaudio/best',
+        'outtmpl':    os.path.join(media_path, '%(playlist_index)s-%(title)s.%(ext)s'),
+        'quiet':      True,
+        'location':   '/usr/bin',
+        'no_warnings': True,
+        'postprocessors': [{
+            'key':            'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+        }],
+    }
+
+    for i, url in enumerate(urls):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            done += 1
+            download_queue[uid]['progress'] = int((done / total) * 100)
+        except Exception as e:
+            errors.append(str(e))
+            print(f"❌ Download error for {url}: {e}")
+
+    if errors and done == 0:
+        download_queue[uid] = {'status': 'error', 'progress': 0, 'error': errors[0]}
+    else:
+        download_queue[uid] = {'status': 'ready', 'progress': 100, 'error': None}
+        mappings = load_mappings()
+        if uid in mappings:
+            mappings[uid]['status']     = 'ready'
+            mappings[uid]['media_path'] = media_path
+            save_mappings(mappings)
+        print(f"✅ Download complete for {uid}")
+
+def start_download(uid, mapping):
+    t = threading.Thread(target=download_mapping, args=(uid, mapping), daemon=True)
+    t.start()
 
 # ── ESP32 serial listener ─────────────────────────────────────────────────────
 def serial_listener():
@@ -171,7 +243,7 @@ def serial_listener():
             threading.Event().wait(1)
 
 def handle_esp32_event(event):
-    global spotify_client, active_rfid_tag, current_tag
+    global active_rfid_tag, current_tag
 
     event_type = event.get('event')
     uid        = event.get('uid')
@@ -179,292 +251,187 @@ def handle_esp32_event(event):
     if event_type == 'TAG_ON':
         print(f"📱 TAG ON: {uid}")
         mappings  = load_mappings()
-        is_mapped = uid in mappings
+        is_mapped = uid in mappings and mappings[uid].get('status') == 'ready'
 
         current_tag = {
-            'present':    True,
-            'uid':        uid,
-            'timestamp':  datetime.now().isoformat(),
-            'mapped':     is_mapped,
-            'track_name': mappings[uid]['name']   if is_mapped else None,
-            'artist':     mappings[uid]['artist'] if is_mapped else None,
+            'present':   True,
+            'uid':       uid,
+            'timestamp': datetime.now().isoformat(),
+            'mapped':    is_mapped,
+            'title':     mappings[uid]['title']  if is_mapped else None,
+            'artist':    mappings[uid]['artist'] if is_mapped else None,
         }
 
-        send_pico_event("TAG_ON", uid=uid, mapped=is_mapped)
-        handle_rfid_on(uid)
+        send_pico("TAG_ON", mapped=is_mapped)
+
+        if is_mapped:
+            play_sound('tag_mapped_32.wav')
+            play_mapping(mappings[uid])
+        else:
+            play_sound('tag_unknown_32.wav')
+            send_pico("TAG_UNKNOWN")
+
+        active_rfid_tag = uid
 
     elif event_type == 'TAG_OFF':
         print(f"📱 TAG OFF: {uid}")
-        current_tag = {'present': False, 'uid': None,
-                       'timestamp': datetime.now().isoformat()}
-        send_pico_event("TAG_OFF", uid=uid)
-        handle_rfid_off(uid)
+        current_tag = {'present': False, 'uid': None, 'timestamp': datetime.now().isoformat()}
+        send_pico("TAG_OFF", uid=uid)
+        stop_playback()
+        active_rfid_tag = None
 
     elif event_type == 'READY':
         print("✅ ESP32 ready!")
-        send_pico_event("IDLE")
-
-def handle_rfid_on(uid):
-    global spotify_client, active_rfid_tag
-
-    active_rfid_tag = uid
-    mappings = load_mappings()
-
-    if uid in mappings:
-        track_info = mappings[uid]
-        if not spotify_client:
-            spotify_client = get_spotify_client()
-        if spotify_client:
-            success = play_spotify_track(spotify_client, track_info['uri'])
-            if success:
-                send_pico_event("PLAYING",
-                                name=track_info['name'],
-                                artist=track_info['artist'])
-        else:
-            print("❌ No spotify_client!")
-            sys.stdout.flush()
-    else:
-        send_pico_event("TAG_UNKNOWN", uid=uid)
-
-def handle_rfid_off(uid):
-    global spotify_client, active_rfid_tag
-
-    if uid == active_rfid_tag:
-        try:
-            if spotify_client:
-                spotify_client.pause_playback()
-                # send_pico_event("PAUSED")
-        except:
-            pass
-        active_rfid_tag = None
-
-def play_spotify_track(sp_client, spotify_uri):
-    global preferred_device_id
-    try:
-        devices = sp_client.devices()
-        if not devices.get('devices'):
-            print("❌ No devices available")
-            return False
-
-        device_id = None
-        for device in devices['devices']:
-            if 'librespot' in device['name'].lower() or 'fonie' in device['name'].lower():
-                device_id = device['id']
-                break
-        if not device_id and preferred_device_id:
-            for device in devices['devices']:
-                if device['id'] == preferred_device_id:
-                    device_id = device['id']
-                    break
-        if not device_id:
-            device_id = devices['devices'][0]['id']
-
-        if spotify_uri.startswith('spotify:album:') or spotify_uri.startswith('spotify:playlist:'):
-            sp_client.start_playback(device_id=device_id, context_uri=spotify_uri)
-        else:
-            sp_client.start_playback(device_id=device_id, uris=[spotify_uri])
-
-        print("✅ Playback started!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Playback error: {e}")
-        import traceback; traceback.print_exc()
-        return False
-
+        send_pico("IDLE")
 
 # ── Web routes ────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
-    auth_manager = get_spotify_oauth()
-    token_info   = auth_manager.get_cached_token()
-    authenticated = token_info and not auth_manager.is_token_expired(token_info)
-
-    user_info = None
-    if authenticated:
-        try:
-            sp = spotipy.Spotify(auth_manager=auth_manager)
-            user_info = sp.current_user()
-        except:
-            pass
-
-    return render_template('index.html',
-                           authenticated=authenticated,
-                           user_info=user_info,
-                           mappings=load_mappings())
-
-@app.route('/api/devices')
-def api_devices():
-    global spotify_client
-    try:
-        auth_manager = get_spotify_oauth()
-        token_info   = auth_manager.get_cached_token()
-        if token_info and auth_manager.is_token_expired(token_info):
-            token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
-        spotify_client = spotipy.Spotify(auth_manager=auth_manager)
-        devices = spotify_client.devices()
-        return jsonify(devices.get('devices', []))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/set-device/<device_id>', methods=['POST'])
-def set_device(device_id):
-    global preferred_device_id
-    preferred_device_id = device_id
-    return jsonify({'success': True, 'device_id': device_id})
-
-@app.route('/login')
-def login():
-    return redirect(get_spotify_oauth().get_authorize_url())
-
-@app.route('/callback')
-def callback():
-    global spotify_client
-    code = request.args.get('code')
-    if code:
-        try:
-            get_spotify_oauth().get_access_token(code)
-            spotify_client = get_spotify_client()
-            return redirect(url_for('index'))
-        except Exception as e:
-            return f"Authentication failed: {e}", 400
-    return "No code received", 400
-
-@app.route('/logout')
-def logout():
-    global spotify_client
-    if os.path.exists(SPOTIFY_CACHE):
-        os.remove(SPOTIFY_CACHE)
-    spotify_client = None
-    return redirect(url_for('index'))
-
-@app.route('/api/mappings')
-def api_mappings():
-    return jsonify(load_mappings())
-
-@app.route('/api/mappings/add', methods=['POST'])
-def add_mapping():
-    data       = request.json
-    rfid_tag   = data.get('rfid_tag', '').strip()
-    spotify_uri = data.get('spotify_uri', '').strip()
-    name       = data.get('name', '').strip()
-    artist     = data.get('artist', '').strip()
-
-    if not rfid_tag or not spotify_uri:
-        return jsonify({'error': 'RFID tag and Spotify URI required'}), 400
-
-    mappings = load_mappings()
-    mappings[rfid_tag] = {
-        'uri': spotify_uri, 'name': name, 'artist': artist,
-        'added': datetime.now().isoformat()
-    }
-    save_mappings(mappings)
-    return jsonify({'success': True})
-
-@app.route('/api/mappings/delete/<rfid_tag>', methods=['POST'])
-def delete_mapping(rfid_tag):
-    mappings = load_mappings()
-    if rfid_tag in mappings:
-        del mappings[rfid_tag]
-        save_mappings(mappings)
-        return jsonify({'success': True})
-    return jsonify({'error': 'Mapping not found'}), 404
+    return render_template('index.html', mappings=load_mappings())
 
 @app.route('/api/search')
 def search():
-    global spotify_client
-    if not spotify_client:
-        spotify_client = get_spotify_client()
-    if not spotify_client:
-        return jsonify({'error': 'Not authenticated'}), 401
-
     query = request.args.get('q', '').strip()
+    mtype = request.args.get('type', 'all')  # track, album, playlist, all
+
     if not query or len(query) < 2:
         return jsonify([])
 
     try:
-        results = spotify_client.search(q=query, type='track,album,playlist', limit=10)
-        items = []
-        for track in results.get('tracks', {}).get('items', []):
-            if track:
-                items.append({'name': track.get('name', 'Unknown'),
-                              'artist': ', '.join([a.get('name') for a in track.get('artists', [])]),
-                              'uri': track.get('uri', ''), 'type': 'track'})
-        for album in results.get('albums', {}).get('items', []):
-            if album:
-                items.append({'name': album.get('name', 'Unknown'),
-                              'artist': ', '.join([a.get('name') for a in album.get('artists', [])]),
-                              'uri': album.get('uri', ''), 'type': 'album'})
-        for pl in results.get('playlists', {}).get('items', []):
-            if pl:
-                items.append({'name': pl.get('name', 'Unknown'),
-                              'artist': f"Playlist by {pl.get('owner', {}).get('display_name', '?')}",
-                              'uri': pl.get('uri', ''), 'type': 'playlist'})
-        return jsonify(items)
+        results = []
+
+        if mtype in ('all', 'track'):
+            tracks = ytmusic.search(query, filter='songs', limit=5)
+            for t in tracks:
+                results.append({
+                    'type':       'track',
+                    'id':         t.get('videoId'),
+                    'title':      t.get('title', 'Unknown'),
+                    'artist':     ', '.join([a['name'] for a in t.get('artists', [])]),
+                    'album':      t.get('album', {}).get('name', '') if t.get('album') else '',
+                    'duration':   t.get('duration', ''),
+                    'thumbnail':  t.get('thumbnails', [{}])[-1].get('url', ''),
+                })
+
+        if mtype in ('all', 'album'):
+            albums = ytmusic.search(query, filter='albums', limit=5)
+            for a in albums:
+                results.append({
+                    'type':      'album',
+                    'id':        a.get('browseId'),
+                    'title':     a.get('title', 'Unknown'),
+                    'artist':    ', '.join([ar['name'] for ar in a.get('artists', [])]),
+                    'year':      a.get('year', ''),
+                    'thumbnail': a.get('thumbnails', [{}])[-1].get('url', ''),
+                })
+
+        if mtype in ('all', 'playlist'):
+            playlists = ytmusic.search(query, filter='playlists', limit=5)
+            for p in playlists:
+                results.append({
+                    'type':      'playlist',
+                    'id':        p.get('browseId'),
+                    'title':     p.get('title', 'Unknown'),
+                    'artist':    p.get('author', ''),
+                    'count':     p.get('itemCount', ''),
+                    'thumbnail': p.get('thumbnails', [{}])[-1].get('url', ''),
+                })
+
+        return jsonify(results)
     except Exception as e:
         print(f"Search error: {e}")
-        return jsonify([])
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/mappings')
+def api_mappings():
+    mappings = load_mappings()
+    # Merge in live download queue status
+    for uid, m in mappings.items():
+        if uid in download_queue:
+            m['status']   = download_queue[uid]['status']
+            m['progress'] = download_queue[uid]['progress']
+            m['error']    = download_queue[uid]['error']
+    return jsonify(mappings)
+
+@app.route('/api/mappings/add', methods=['POST'])
+def add_mapping():
+    data = request.json
+    uid  = data.get('uid', '').strip()
+
+    if not uid:
+        return jsonify({'error': 'UID required'}), 400
+
+    mapping = {
+        'uid':        uid,
+        'type':       data.get('type'),
+        'title':      data.get('title'),
+        'artist':     data.get('artist'),
+        'ytmusic_id': data.get('id'),
+        'status':     'pending',
+        'media_path': None,
+        'added':      datetime.now().isoformat(),
+    }
+
+    mappings = load_mappings()
+    mappings[uid] = mapping
+    save_mappings(mappings)
+
+    # Kick off download immediately
+    start_download(uid, mapping)
+
+    return jsonify({'success': True})
+
+@app.route('/api/mappings/delete/<uid>', methods=['POST'])
+def delete_mapping(uid):
+    mappings = load_mappings()
+    if uid in mappings:
+        # Clean up media
+        media_path = mappings[uid].get('media_path')
+        if media_path and os.path.exists(media_path):
+            import shutil
+            shutil.rmtree(media_path, ignore_errors=True)
+        del mappings[uid]
+        save_mappings(mappings)
+        return jsonify({'success': True})
+    return jsonify({'error': 'Not found'}), 404
+
+@app.route('/api/mappings/retry/<uid>', methods=['POST'])
+def retry_mapping(uid):
+    mappings = load_mappings()
+    if uid not in mappings:
+        return jsonify({'error': 'Not found'}), 404
+    mappings[uid]['status'] = 'pending'
+    save_mappings(mappings)
+    start_download(uid, mappings[uid])
+    return jsonify({'success': True})
 
 @app.route('/api/current-tag')
 def api_current_tag():
     return jsonify(current_tag)
 
-@app.route('/api/current-playback')
-def current_playback():
-    global spotify_client
-    if not spotify_client:
-        spotify_client = get_spotify_client()
-    if not spotify_client:
-        return jsonify({'playing': False})
-    try:
-        playback = spotify_client.current_playback()
-        if not playback or not playback.get('item'):
-            return jsonify({'playing': False})
-        item = playback['item']
-        return jsonify({
-            'playing':    playback.get('is_playing', False),
-            'track_name': item.get('name', 'Unknown'),
-            'artist':     ', '.join([a.get('name') for a in item.get('artists', [])]),
-            'album':      item.get('album', {}).get('name', 'Unknown'),
-            'progress':   playback.get('progress_ms', 0),
-            'duration':   item.get('duration_ms', 0),
-            'image':      item.get('album', {}).get('images', [{}])[0].get('url', '')
-        })
-    except Exception as e:
-        print(f"Playback error: {e}")
-        return jsonify({'playing': False})
+@app.route('/api/download-queue')
+def api_download_queue():
+    return jsonify(download_queue)
 
-# ── New API: send arbitrary event to Pico (for testing) ──────────────────────
 @app.route('/api/pico/event', methods=['POST'])
 def api_pico_event():
     data = request.json
     if not data or 'event' not in data:
         return jsonify({'error': 'event required'}), 400
     event = data.pop('event')
-    send_pico_event(event, **data)
+    send_pico(event, **data)
     return jsonify({'success': True})
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    print("🎵 Fonie - RFID Spotify Player")
+    print("🎵 Fonie - RFID Music Player")
     print("=" * 50)
 
-    spotify_client = get_spotify_client()
-    if spotify_client:
-        print("✅ Spotify authenticated from cache")
-    else:
-        print("⚠️  Not authenticated - visit web UI to login")
-
-    # Connect to Pico first so it's ready when ESP32 events arrive
     pico_connect()
-
     threading.Thread(target=serial_listener, daemon=True).start()
-    print("📡 ESP32 serial listener started")
+    threading.Thread(target=pico_listener,   daemon=True).start()
 
-    threading.Thread(target=pico_listener, daemon=True).start()
-    print("📡 Pico serial listener started")
-
+    print("📡 Serial listeners started")
     print("=" * 50)
     print("🌐 Starting on 127.0.0.1:5001")
     print("=" * 50)
