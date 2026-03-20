@@ -4,8 +4,11 @@ import serial
 import threading
 import sys
 import subprocess
+import socket
 import time
-from flask import Flask, render_template, request, redirect, jsonify
+import urllib.request
+import io
+from flask import Flask, render_template, request, jsonify
 from datetime import datetime
 import secrets
 from ytmusicapi import YTMusic
@@ -15,24 +18,27 @@ app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ESP32_PORT   = '/dev/ttyAMA2'
-PICO_PORT    = '/dev/ttyAMA5'
-SERIAL_BAUD  = 115200
-MEDIA_DIR    = os.path.expanduser('~/rfid-player/media')
+ESP32_PORT    = '/dev/ttyAMA2'
+PICO_PORT     = '/dev/ttyAMA5'
+SERIAL_BAUD   = 115200
+MEDIA_DIR     = os.path.expanduser('~/rfid-player/media')
 MAPPINGS_FILE = os.path.expanduser('~/rfid-player/rfid_mappings.json')
-SOUNDS_DIR   = os.path.expanduser('~/rfid-player/sounds')
-AUDIO_DEVICE = 'hw:2,0'
+SOUNDS_DIR    = os.path.expanduser('~/rfid-player/sounds')
+AUDIO_DEVICE  = 'hw:2,0'
+MPV_SOCKET    = '/tmp/mpv.sock'
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # ── Global state ──────────────────────────────────────────────────────────────
-esp32_serial   = None
-pico_serial    = None
+esp32_serial    = None
+pico_serial     = None
 active_rfid_tag = None
-current_tag    = {'present': False, 'uid': None, 'timestamp': None}
-mpv_process    = None
-download_queue = {}   # uid -> {status, progress, error}
-ytmusic        = YTMusic()
+current_tag     = {'present': False, 'uid': None, 'timestamp': None}
+mpv_process     = None
+download_queue  = {}
+playback_state  = {'paused': False, 'volume': 80}
+battery_state   = {'level': None, 'charging': False, 'rate': 0.0}
+ytmusic         = YTMusic()
 
 # ── Mappings ──────────────────────────────────────────────────────────────────
 def load_mappings():
@@ -44,6 +50,22 @@ def load_mappings():
 def save_mappings(mappings):
     with open(MAPPINGS_FILE, 'w') as f:
         json.dump(mappings, f, indent=2)
+
+# ── Color extraction ──────────────────────────────────────────────────────────
+def extract_dominant_color(thumbnail_url):
+    if not thumbnail_url:
+        return None
+    try:
+        from colorthief import ColorThief
+        req  = urllib.request.Request(thumbnail_url, headers={'User-Agent': 'Mozilla/5.0'})
+        data = urllib.request.urlopen(req, timeout=5).read()
+        ct   = ColorThief(io.BytesIO(data))
+        r, g, b = ct.get_color(quality=1)
+        print(f"🎨 Dominant color: rgb({r},{g},{b})")
+        return {'r': r, 'g': g, 'b': b}
+    except Exception as e:
+        print(f"⚠️  Color extraction failed: {e}")
+        return None
 
 # ── Pico communication ────────────────────────────────────────────────────────
 def send_pico(event, **kwargs):
@@ -57,19 +79,28 @@ def send_pico(event, **kwargs):
         sys.stdout.flush()
     except Exception as e:
         print(f"❌ Pico send error: {e}")
-        sys.stdout.flush()
 
 def pico_connect():
     global pico_serial
     try:
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
         print(f"✅ Pico connected on {PICO_PORT}")
-        sys.stdout.flush()
         send_pico("READY")
     except Exception as e:
         print(f"⚠️  Pico not connected: {e}")
-        sys.stdout.flush()
         pico_serial = None
+
+def handle_pico_message(data):
+    global battery_state
+    event = data.get('event')
+    if event == 'SOC':
+        battery_state = {
+            'level':    data.get('level'),
+            'charging': data.get('charging', False),
+            'rate':     data.get('rate', 0.0),
+        }
+        print(f"🔋 Battery: {battery_state['level']}% {'⚡ charging' if battery_state['charging'] else ''}")
+        sys.stdout.flush()
 
 def pico_listener():
     global pico_serial
@@ -83,14 +114,48 @@ def pico_listener():
                 line = pico_serial.readline().decode('utf-8').strip()
                 if line:
                     print(f"← Pico: {line}")
-                    sys.stdout.flush()
-        except serial.SerialException as e:
-            print(f"❌ Pico serial error: {e}")
+                    try:
+                        handle_pico_message(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+        except serial.SerialException:
             pico_serial = None
             threading.Event().wait(5)
-        except Exception as e:
-            print(f"❌ Pico error: {e}")
+        except Exception:
             threading.Event().wait(1)
+
+# ── Volume ────────────────────────────────────────────────────────────────────
+def set_system_volume(vol):
+    hw_vol = 55 + int(vol * 0.45)
+    try:
+        subprocess.run(
+            ['amixer', '-D', 'hw:2', 'sset', 'A.Mstr Vol', f'{hw_vol}%'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except Exception as e:
+        print(f"❌ Volume error: {e}")
+
+# ── mpv IPC ───────────────────────────────────────────────────────────────────
+def mpv_command(cmd):
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        sock.connect(MPV_SOCKET)
+        sock.sendall((json.dumps(cmd) + '\n').encode())
+        sock.close()
+        return True
+    except Exception as e:
+        print(f"❌ mpv IPC error: {e}")
+        return False
+
+def mpv_set_pause(paused):
+    return mpv_command({"command": ["set_property", "pause", paused]})
+
+def mpv_next():
+    return mpv_command({"command": ["playlist-next"]})
+
+def mpv_prev():
+    return mpv_command({"command": ["playlist-prev"]})
 
 # ── Audio playback ────────────────────────────────────────────────────────────
 def play_sound(filename):
@@ -100,16 +165,29 @@ def play_sound(filename):
     try:
         subprocess.run(
             ['aplay', '-D', AUDIO_DEVICE, path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )  # run instead of Popen — blocks until done
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception as e:
         print(f"❌ Sound error: {e}")
 
-def play_mapping(mapping):
+def stop_playback():
     global mpv_process
+    if mpv_process and mpv_process.poll() is None:
+        for vol in range(100, 0, -5):
+            mpv_command({"command": ["set_property", "volume", vol]})
+            time.sleep(0.05)
+        mpv_process.terminate()
+        mpv_process = None
+    if os.path.exists(MPV_SOCKET):
+        try:
+            os.remove(MPV_SOCKET)
+        except:
+            pass
+
+def play_mapping(mapping):
+    global mpv_process, playback_state
     stop_playback()
-    
+
     media_path = mapping.get('media_path')
     if not media_path or not os.path.exists(media_path):
         print(f"❌ Media path not found: {media_path}")
@@ -127,22 +205,19 @@ def play_mapping(mapping):
 
     print(f"▶️  Playing {len(tracks)} track(s) from {media_path}")
     mpv_process = subprocess.Popen(
-        ['mpv', '--no-video'] + tracks,  # no audio-device flag
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        ['mpv', '--no-video', f'--input-ipc-server={MPV_SOCKET}'] + tracks,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    send_pico("PLAYING")
+    playback_state['paused'] = False
 
-def stop_playback():
-    global mpv_process
-    if mpv_process and mpv_process.poll() is None:
-        mpv_process.terminate()
-        mpv_process = None
-
+    color = mapping.get('color')
+    if color:
+        send_pico("PLAYING", r=color['r'], g=color['g'], b=color['b'])
+    else:
+        send_pico("PLAYING")
 
 # ── Download queue ────────────────────────────────────────────────────────────
 def download_mapping(uid, mapping):
-    """Download audio for a mapping in the background."""
     media_path = os.path.join(MEDIA_DIR, uid)
     os.makedirs(media_path, exist_ok=True)
 
@@ -154,7 +229,6 @@ def download_mapping(uid, mapping):
     if mtype == 'track':
         urls = [f'https://music.youtube.com/watch?v={ytmusic_id}']
     else:
-        # album or playlist — fetch all track IDs
         try:
             if mtype == 'album':
                 info = ytmusic.get_album(ytmusic_id)
@@ -165,27 +239,23 @@ def download_mapping(uid, mapping):
                 urls = [f'https://music.youtube.com/watch?v={t["videoId"]}'
                         for t in info['tracks'] if t.get('videoId')]
         except Exception as e:
-            print(f"❌ Failed to fetch track list: {e}")
             download_queue[uid] = {'status': 'error', 'progress': 0, 'error': str(e)}
             return
 
-    total  = len(urls)
-    done   = 0
+    total = len(urls)
+    done  = 0
     errors = []
 
     ydl_opts = {
-        'format':     'bestaudio/best',
-        'outtmpl':    os.path.join(media_path, '%(playlist_index)s-%(title)s.%(ext)s'),
-        'quiet':      True,
-        'location':   '/usr/bin',
-        'no_warnings': True,
-        'postprocessors': [{
-            'key':            'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-        }],
+        'format':          'bestaudio/best',
+        'outtmpl':         os.path.join(media_path, '%(playlist_index)s-%(title)s.%(ext)s'),
+        'quiet':           True,
+        'no_warnings':     True,
+        'ffmpeg_location': '/usr/bin',
+        'postprocessors':  [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
     }
 
-    for i, url in enumerate(urls):
+    for url in urls:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
@@ -193,18 +263,21 @@ def download_mapping(uid, mapping):
             download_queue[uid]['progress'] = int((done / total) * 100)
         except Exception as e:
             errors.append(str(e))
-            print(f"❌ Download error for {url}: {e}")
 
     if errors and done == 0:
         download_queue[uid] = {'status': 'error', 'progress': 0, 'error': errors[0]}
-    else:
-        download_queue[uid] = {'status': 'ready', 'progress': 100, 'error': None}
-        mappings = load_mappings()
-        if uid in mappings:
-            mappings[uid]['status']     = 'ready'
-            mappings[uid]['media_path'] = media_path
-            save_mappings(mappings)
-        print(f"✅ Download complete for {uid}")
+        return
+
+    color = extract_dominant_color(mapping.get('thumbnail'))
+    download_queue[uid] = {'status': 'ready', 'progress': 100, 'error': None}
+    mappings = load_mappings()
+    if uid in mappings:
+        mappings[uid]['status']     = 'ready'
+        mappings[uid]['media_path'] = media_path
+        if color:
+            mappings[uid]['color'] = color
+        save_mappings(mappings)
+    print(f"✅ Download complete for {uid}")
 
 def start_download(uid, mapping):
     t = threading.Thread(target=download_mapping, args=(uid, mapping), daemon=True)
@@ -219,27 +292,22 @@ def serial_listener():
             if not esp32_serial:
                 esp32_serial = serial.Serial(ESP32_PORT, SERIAL_BAUD, timeout=1)
                 print(f"✅ ESP32 connected on {ESP32_PORT}")
-                sys.stdout.flush()
 
             if esp32_serial.in_waiting:
                 line = esp32_serial.readline().decode('utf-8').strip()
                 print(f"📨 ESP32: {line}")
-                sys.stdout.flush()
                 if line:
                     try:
                         handle_esp32_event(json.loads(line))
-                    except json.JSONDecodeError as e:
-                        print(f"❌ JSON error: {e}")
-                        sys.stdout.flush()
+                    except json.JSONDecodeError:
+                        pass
 
         except serial.SerialException as e:
             print(f"❌ ESP32 serial error: {e}")
-            sys.stdout.flush()
             esp32_serial = None
             threading.Event().wait(5)
         except Exception as e:
             print(f"❌ Error: {e}")
-            sys.stdout.flush()
             threading.Event().wait(1)
 
 def handle_esp32_event(event):
@@ -260,6 +328,7 @@ def handle_esp32_event(event):
             'mapped':    is_mapped,
             'title':     mappings[uid]['title']  if is_mapped else None,
             'artist':    mappings[uid]['artist'] if is_mapped else None,
+            'color':     mappings[uid].get('color') if is_mapped else None,
         }
 
         send_pico("TAG_ON", mapped=is_mapped)
@@ -287,12 +356,12 @@ def handle_esp32_event(event):
 # ── Web routes ────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
-    return render_template('index.html', mappings=load_mappings())
+    return render_template('index.html')
 
 @app.route('/api/search')
 def search():
     query = request.args.get('q', '').strip()
-    mtype = request.args.get('type', 'all')  # track, album, playlist, all
+    mtype = request.args.get('type', 'all')
 
     if not query or len(query) < 2:
         return jsonify([])
@@ -301,21 +370,19 @@ def search():
         results = []
 
         if mtype in ('all', 'track'):
-            tracks = ytmusic.search(query, filter='songs', limit=5)
-            for t in tracks:
+            for t in ytmusic.search(query, filter='songs', limit=5):
                 results.append({
-                    'type':       'track',
-                    'id':         t.get('videoId'),
-                    'title':      t.get('title', 'Unknown'),
-                    'artist':     ', '.join([a['name'] for a in t.get('artists', [])]),
-                    'album':      t.get('album', {}).get('name', '') if t.get('album') else '',
-                    'duration':   t.get('duration', ''),
-                    'thumbnail':  t.get('thumbnails', [{}])[-1].get('url', ''),
+                    'type':      'track',
+                    'id':        t.get('videoId'),
+                    'title':     t.get('title', 'Unknown'),
+                    'artist':    ', '.join([a['name'] for a in t.get('artists', [])]),
+                    'album':     t.get('album', {}).get('name', '') if t.get('album') else '',
+                    'duration':  t.get('duration', ''),
+                    'thumbnail': t.get('thumbnails', [{}])[-1].get('url', ''),
                 })
 
         if mtype in ('all', 'album'):
-            albums = ytmusic.search(query, filter='albums', limit=5)
-            for a in albums:
+            for a in ytmusic.search(query, filter='albums', limit=5):
                 results.append({
                     'type':      'album',
                     'id':        a.get('browseId'),
@@ -326,8 +393,7 @@ def search():
                 })
 
         if mtype in ('all', 'playlist'):
-            playlists = ytmusic.search(query, filter='playlists', limit=5)
-            for p in playlists:
+            for p in ytmusic.search(query, filter='playlists', limit=5):
                 results.append({
                     'type':      'playlist',
                     'id':        p.get('browseId'),
@@ -339,13 +405,11 @@ def search():
 
         return jsonify(results)
     except Exception as e:
-        print(f"Search error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/mappings')
 def api_mappings():
     mappings = load_mappings()
-    # Merge in live download queue status
     for uid, m in mappings.items():
         if uid in download_queue:
             m['status']   = download_queue[uid]['status']
@@ -357,7 +421,6 @@ def api_mappings():
 def add_mapping():
     data = request.json
     uid  = data.get('uid', '').strip()
-
     if not uid:
         return jsonify({'error': 'UID required'}), 400
 
@@ -367,25 +430,22 @@ def add_mapping():
         'title':      data.get('title'),
         'artist':     data.get('artist'),
         'ytmusic_id': data.get('id'),
+        'thumbnail':  data.get('thumbnail'),
         'status':     'pending',
         'media_path': None,
+        'color':      None,
         'added':      datetime.now().isoformat(),
     }
-
     mappings = load_mappings()
     mappings[uid] = mapping
     save_mappings(mappings)
-
-    # Kick off download immediately
     start_download(uid, mapping)
-
     return jsonify({'success': True})
 
 @app.route('/api/mappings/delete/<uid>', methods=['POST'])
 def delete_mapping(uid):
     mappings = load_mappings()
     if uid in mappings:
-        # Clean up media
         media_path = mappings[uid].get('media_path')
         if media_path and os.path.exists(media_path):
             import shutil
@@ -409,9 +469,59 @@ def retry_mapping(uid):
 def api_current_tag():
     return jsonify(current_tag)
 
-@app.route('/api/download-queue')
-def api_download_queue():
-    return jsonify(download_queue)
+@app.route('/api/battery')
+def api_battery():
+    return jsonify(battery_state)
+
+# ── Playback control routes ───────────────────────────────────────────────────
+@app.route('/api/playback/status')
+def playback_status():
+    is_running = mpv_process is not None and mpv_process.poll() is None
+    return jsonify({
+        'playing': is_running and not playback_state['paused'],
+        'paused':  is_running and playback_state['paused'],
+        'stopped': not is_running,
+        'volume':  playback_state['volume'],
+    })
+
+@app.route('/api/playback/pause', methods=['POST'])
+def playback_pause():
+    if mpv_set_pause(True):
+        playback_state['paused'] = True
+        send_pico("PAUSED")
+        return jsonify({'success': True})
+    return jsonify({'error': 'mpv not running'}), 400
+
+@app.route('/api/playback/resume', methods=['POST'])
+def playback_resume():
+    if mpv_set_pause(False):
+        playback_state['paused'] = False
+        color = current_tag.get('color')
+        if color:
+            send_pico("PLAYING", r=color['r'], g=color['g'], b=color['b'])
+        else:
+            send_pico("PLAYING")
+        return jsonify({'success': True})
+    return jsonify({'error': 'mpv not running'}), 400
+
+@app.route('/api/playback/next', methods=['POST'])
+def playback_next():
+    mpv_next()
+    return jsonify({'success': True})
+
+@app.route('/api/playback/prev', methods=['POST'])
+def playback_prev():
+    mpv_prev()
+    return jsonify({'success': True})
+
+@app.route('/api/playback/volume', methods=['POST'])
+def playback_volume():
+    vol = request.json.get('volume', 80)
+    vol = max(0, min(100, int(vol)))
+    playback_state['volume'] = vol
+    set_system_volume(vol)
+    send_pico("VOLUME", level=vol)
+    return jsonify({'success': True, 'volume': vol})
 
 @app.route('/api/pico/event', methods=['POST'])
 def api_pico_event():
@@ -427,13 +537,12 @@ if __name__ == '__main__':
     print("🎵 Fonie - RFID Music Player")
     print("=" * 50)
 
+    set_system_volume(playback_state['volume'])
+
     pico_connect()
     threading.Thread(target=serial_listener, daemon=True).start()
     threading.Thread(target=pico_listener,   daemon=True).start()
 
     print("📡 Serial listeners started")
     print("=" * 50)
-    print("🌐 Starting on 127.0.0.1:5001")
-    print("=" * 50)
-
     app.run(host='127.0.0.1', port=5001, debug=False)

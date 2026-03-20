@@ -36,17 +36,17 @@
       min-height: 100vh;
     }
 
-    /* ── Layout ── */
     .app {
       display: grid;
       grid-template-columns: 320px 1fr;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto 1fr;
       min-height: 100vh;
     }
 
+    /* ── Header ── */
     header {
       grid-column: 1 / -1;
-      padding: 20px 32px;
+      padding: 18px 32px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -61,8 +61,92 @@
       letter-spacing: -0.5px;
     }
 
-    .tag-status {
+    .header-right {
       margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* ── Battery ── */
+    .battery {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+    }
+
+    .battery-icon {
+      position: relative;
+      width: 28px;
+      height: 14px;
+      border: 1.5px solid var(--muted);
+      border-radius: 3px;
+    }
+
+    .battery-icon::after {
+      content: '';
+      position: absolute;
+      right: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 6px;
+      background: var(--muted);
+      border-radius: 0 1px 1px 0;
+    }
+
+    .battery-fill {
+      position: absolute;
+      left: 1px;
+      top: 1px;
+      bottom: 1px;
+      border-radius: 1px;
+      background: var(--accent);
+      transition: width 0.5s, background 0.3s;
+    }
+
+    .battery-fill.low {
+      background: var(--danger);
+    }
+
+    .battery-fill.medium {
+      background: var(--warn);
+    }
+
+    .battery-fill.charging {
+      background: var(--accent2);
+    }
+
+    .battery-label {
+      color: var(--muted);
+    }
+
+    .battery-label.charging {
+      color: var(--accent2);
+    }
+
+    .charging-bolt {
+      color: var(--accent2);
+      font-size: 11px;
+      animation: boltpulse 1s ease-in-out infinite;
+    }
+
+    @keyframes boltpulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    /* ── Tag status ── */
+    .tag-status {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -76,7 +160,7 @@
       height: 8px;
       border-radius: 50%;
       background: var(--border);
-      transition: background 0.3s;
+      transition: all 0.3s;
     }
 
     .tag-dot.active {
@@ -87,6 +171,121 @@
     .tag-dot.unknown {
       background: var(--warn);
       box-shadow: 0 0 8px var(--warn);
+    }
+
+    /* ── Player bar ── */
+    .player-bar {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      min-height: 72px;
+    }
+
+    .np-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .np-title {
+      font-weight: 500;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .np-artist {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .np-idle {
+      color: var(--muted);
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .ctrl-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      font-size: 16px;
+    }
+
+    .ctrl-btn:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    .ctrl-btn.primary {
+      width: 44px;
+      height: 44px;
+      border-color: var(--accent);
+      color: var(--accent);
+      font-size: 18px;
+    }
+
+    .ctrl-btn.primary:hover {
+      background: var(--accent);
+      color: #0e0e0f;
+    }
+
+    .volume-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .vol-icon {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .vol-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      width: 28px;
     }
 
     /* ── Sidebar ── */
@@ -105,7 +304,6 @@
       margin-bottom: 16px;
     }
 
-    /* ── Mapping cards ── */
     .mapping-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -113,8 +311,6 @@
       padding: 14px;
       margin-bottom: 10px;
       transition: border-color 0.2s;
-      position: relative;
-      overflow: hidden;
     }
 
     .mapping-card.active-card {
@@ -133,15 +329,6 @@
       display: flex;
       align-items: flex-start;
       gap: 10px;
-    }
-
-    .card-thumb {
-      width: 44px;
-      height: 44px;
-      border-radius: 6px;
-      object-fit: cover;
-      background: var(--border);
-      flex-shrink: 0;
     }
 
     .card-info {
@@ -264,7 +451,7 @@
       color: var(--muted);
     }
 
-    /* ── Main area ── */
+    /* ── Main ── */
     .main {
       padding: 32px;
       overflow-y: auto;
@@ -279,13 +466,11 @@
       margin-bottom: 20px;
     }
 
-    /* ── Add mapping form ── */
     .add-form {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
-      margin-bottom: 32px;
     }
 
     .form-row {
@@ -309,8 +494,7 @@
       text-transform: uppercase;
     }
 
-    input,
-    select {
+    input {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -323,8 +507,7 @@
       width: 100%;
     }
 
-    input:focus,
-    select:focus {
+    input:focus {
       border-color: var(--accent);
     }
 
@@ -373,7 +556,6 @@
       color: var(--accent);
     }
 
-    /* ── Search results ── */
     .search-bar {
       display: flex;
       gap: 10px;
@@ -407,9 +589,9 @@
 
     .results-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 12px;
-      max-height: 380px;
+      max-height: 360px;
       overflow-y: auto;
     }
 
@@ -504,60 +686,6 @@
       font-size: 13px;
     }
 
-    /* ── Now playing banner ── */
-    .now-playing {
-      background: rgba(126, 234, 188, 0.06);
-      border: 1px solid rgba(126, 234, 188, 0.15);
-      border-radius: var(--radius);
-      padding: 14px 18px;
-      margin-bottom: 24px;
-      display: none;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .now-playing.visible {
-      display: flex;
-    }
-
-    .np-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      animation: pulse 1.5s ease-in-out infinite;
-      flex-shrink: 0;
-    }
-
-    @keyframes pulse {
-
-      0%,
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-
-      50% {
-        opacity: 0.5;
-        transform: scale(0.8);
-      }
-    }
-
-    .np-text {
-      flex: 1;
-    }
-
-    .np-title {
-      font-weight: 500;
-      font-size: 14px;
-    }
-
-    .np-artist {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    /* ── Scrollbar ── */
     ::-webkit-scrollbar {
       width: 4px;
     }
@@ -571,7 +699,6 @@
       border-radius: 2px;
     }
 
-    /* ── Loading ── */
     .spinner {
       width: 16px;
       height: 16px;
@@ -595,13 +722,46 @@
 
     <header>
       <div class="logo">fonie</div>
-      <div class="tag-status">
-        <div class="tag-dot" id="tagDot"></div>
-        <span id="tagLabel">no tag</span>
+      <div class="header-right">
+        <!-- Battery -->
+        <div class="battery" id="battery" style="display:none">
+          <div class="battery-icon">
+            <div class="battery-fill" id="battFill"></div>
+          </div>
+          <span class="battery-label" id="battLabel">—</span>
+          <span class="charging-bolt" id="battBolt" style="display:none">⚡</span>
+        </div>
+
+        <!-- Tag status -->
+        <div class="tag-status">
+          <div class="tag-dot" id="tagDot"></div>
+          <span id="tagLabel">no tag</span>
+        </div>
       </div>
     </header>
 
-    <!-- Sidebar: mappings -->
+    <!-- Player bar -->
+    <div class="player-bar">
+      <div class="np-info">
+        <div id="npIdle" class="np-idle">Place a tag to play</div>
+        <div id="npTrack" style="display:none">
+          <div class="np-title" id="npTitle">—</div>
+          <div class="np-artist" id="npArtist">—</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="ctrl-btn" onclick="prevTrack()" title="Previous">&#9664;&#9664;</button>
+        <button class="ctrl-btn primary" id="playPauseBtn" onclick="togglePlayPause()">&#9654;</button>
+        <button class="ctrl-btn" onclick="nextTrack()" title="Next">&#9654;&#9654;</button>
+      </div>
+      <div class="volume-group">
+        <span class="vol-icon">&#128266;</span>
+        <input type="range" id="volumeSlider" min="0" max="100" value="80" oninput="setVolume(this.value)">
+        <span class="vol-label" id="volLabel">80</span>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
     <aside class="sidebar">
       <h2>Mappings</h2>
       <div id="mappingsList">
@@ -609,62 +769,104 @@
       </div>
     </aside>
 
-    <!-- Main: add mapping -->
+    <!-- Main -->
     <main class="main">
-      <div class="now-playing" id="nowPlaying">
-        <div class="np-dot"></div>
-        <div class="np-text">
-          <div class="np-title" id="npTitle">—</div>
-          <div class="np-artist" id="npArtist">—</div>
-        </div>
-      </div>
-
       <h2>Add Mapping</h2>
       <div class="add-form">
-
-        <!-- UID row -->
         <div class="form-row">
           <div class="form-group">
             <label>Tag UID</label>
             <input type="text" id="uidInput" class="uid-field" placeholder="Scan a tag or enter manually…">
           </div>
         </div>
-
-        <!-- Search row -->
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="Search YouTube Music…" style="flex:1">
           <button class="btn btn-ghost" onclick="doSearch()">Search</button>
         </div>
-
-        <!-- Filter tabs -->
         <div class="filter-tabs">
           <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
           <button class="filter-tab" onclick="setFilter('track', this)">Tracks</button>
           <button class="filter-tab" onclick="setFilter('album', this)">Albums</button>
           <button class="filter-tab" onclick="setFilter('playlist', this)">Playlists</button>
         </div>
-
-        <!-- Results -->
         <div class="results-grid" id="resultsGrid">
           <div class="empty-state" style="grid-column:1/-1">Search for something to map</div>
         </div>
-
-        <!-- Selected summary -->
         <div class="selected-summary" id="selectedSummary"></div>
-
-        <!-- Submit -->
         <div style="margin-top:16px; display:flex; justify-content:flex-end;">
           <button class="btn btn-primary" id="addBtn" onclick="addMapping()" disabled>Map to tag</button>
         </div>
       </div>
     </main>
-
   </div>
 
   <script>
     let selectedResult = null;
     let currentFilter = 'all';
-    let currentTag = null;
+    let pbState = { playing: false, paused: false, volume: 80 };
+
+    // ── Battery ───────────────────────────────────────────────────────────────────
+    async function pollBattery() {
+      try {
+        const r = await fetch('/api/battery');
+        const b = await r.json();
+        if (b.level === null) return;
+
+        document.getElementById('battery').style.display = 'flex';
+
+        const fill = document.getElementById('battFill');
+        const label = document.getElementById('battLabel');
+        const bolt = document.getElementById('battBolt');
+
+        const pct = Math.max(0, Math.min(100, b.level));
+        fill.style.width = `${pct}%`;
+        fill.className = 'battery-fill' +
+          (b.charging ? ' charging' : pct <= 20 ? ' low' : pct <= 50 ? ' medium' : '');
+
+        label.textContent = `${pct}%`;
+        label.className = 'battery-label' + (b.charging ? ' charging' : '');
+        bolt.style.display = b.charging ? 'inline' : 'none';
+      } catch (e) { }
+    }
+
+    // ── Playback controls ─────────────────────────────────────────────────────────
+    async function togglePlayPause() {
+      if (pbState.paused) {
+        await fetch('/api/playback/resume', { method: 'POST' });
+      } else if (pbState.playing) {
+        await fetch('/api/playback/pause', { method: 'POST' });
+      }
+      pollPlayback();
+    }
+
+    async function nextTrack() { await fetch('/api/playback/next', { method: 'POST' }); }
+    async function prevTrack() { await fetch('/api/playback/prev', { method: 'POST' }); }
+
+    let volumeTimer = null;
+    function setVolume(val) {
+      document.getElementById('volLabel').textContent = val;
+      clearTimeout(volumeTimer);
+      volumeTimer = setTimeout(async () => {
+        await fetch('/api/playback/volume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume: parseInt(val) })
+        });
+      }, 200);
+    }
+
+    async function pollPlayback() {
+      try {
+        const r = await fetch('/api/playback/status');
+        pbState = await r.json();
+        const btn = document.getElementById('playPauseBtn');
+        btn.innerHTML = pbState.playing ? '&#9646;&#9646;' : '&#9654;';
+        const slider = document.getElementById('volumeSlider');
+        const label = document.getElementById('volLabel');
+        slider.value = pbState.volume;
+        label.textContent = pbState.volume;
+      } catch (e) { }
+    }
 
     // ── Tag polling ───────────────────────────────────────────────────────────────
     async function pollTag() {
@@ -675,69 +877,50 @@
         const label = document.getElementById('tagLabel');
 
         if (t.present) {
-          currentTag = t;
           dot.className = 'tag-dot ' + (t.mapped ? 'active' : 'unknown');
           label.textContent = t.uid;
-
-          // Pre-fill UID field if empty
           const uidInput = document.getElementById('uidInput');
           if (!uidInput.value) uidInput.value = t.uid;
-
-          // Now playing
           if (t.mapped && t.title) {
-            document.getElementById('nowPlaying').classList.add('visible');
+            document.getElementById('npIdle').style.display = 'none';
+            document.getElementById('npTrack').style.display = 'block';
             document.getElementById('npTitle').textContent = t.title;
             document.getElementById('npArtist').textContent = t.artist || '—';
           }
         } else {
-          currentTag = null;
           dot.className = 'tag-dot';
           label.textContent = 'no tag';
-          document.getElementById('nowPlaying').classList.remove('visible');
+          document.getElementById('npIdle').style.display = 'block';
+          document.getElementById('npTrack').style.display = 'none';
         }
       } catch (e) { }
     }
 
-    // ── Mappings polling ──────────────────────────────────────────────────────────
+    // ── Mappings ──────────────────────────────────────────────────────────────────
     async function pollMappings() {
       try {
         const r = await fetch('/api/mappings');
-        const mappings = await r.json();
-        renderMappings(mappings);
+        renderMappings(await r.json());
       } catch (e) { }
     }
 
     function renderMappings(mappings) {
       const el = document.getElementById('mappingsList');
       const keys = Object.keys(mappings);
-      if (!keys.length) {
-        el.innerHTML = '<div class="empty-state">No mappings yet</div>';
-        return;
-      }
-
+      if (!keys.length) { el.innerHTML = '<div class="empty-state">No mappings yet</div>'; return; }
       el.innerHTML = keys.map(uid => {
         const m = mappings[uid];
-        const isActive = currentTag && currentTag.uid === uid;
-        const statusClass = m.status === 'error' ? 'error-card'
-          : m.status === 'downloading' ? 'downloading' : '';
-        const activeClass = isActive ? 'active-card' : '';
-
-        const progressBar = m.status === 'downloading' ? `
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:${m.progress || 0}%"></div>
-      </div>
-      <div class="status-label downloading">Downloading… ${m.progress || 0}%</div>
-    ` : m.status === 'ready' ? `
-      <div class="status-label ready">✓ Ready</div>
-    ` : m.status === 'error' ? `
-      <div class="status-label error">✗ ${m.error || 'Download failed'}</div>
-    ` : `<div class="status-label pending">Pending…</div>`;
-
+        const statusClass = m.status === 'error' ? 'error-card' : m.status === 'downloading' ? 'downloading' : '';
+        const progressBar = m.status === 'downloading'
+          ? `<div class="progress-bar"><div class="progress-fill" style="width:${m.progress || 0}%"></div></div>
+         <div class="status-label downloading">Downloading… ${m.progress || 0}%</div>`
+          : m.status === 'ready' ? `<div class="status-label ready">✓ Ready</div>`
+            : m.status === 'error' ? `<div class="status-label error">✗ ${m.error || 'Download failed'}</div>`
+              : `<div class="status-label pending">Pending…</div>`;
         const retryBtn = m.status === 'error'
           ? `<button class="btn-sm" onclick="retryMapping('${uid}')">Retry</button>` : '';
-
         return `
-      <div class="mapping-card ${activeClass} ${statusClass}">
+      <div class="mapping-card ${statusClass}">
         <div class="card-top">
           <div class="card-info">
             <div class="card-title">${m.title || '—'}</div>
@@ -751,8 +934,7 @@
           ${retryBtn}
           <button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button>
         </div>
-      </div>
-    `;
+      </div>`;
       }).join('');
     }
 
@@ -766,34 +948,23 @@
     async function doSearch() {
       const q = document.getElementById('searchInput').value.trim();
       if (!q) return;
-
       const grid = document.getElementById('resultsGrid');
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="spinner"></div></div>';
-
       try {
         const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&type=${currentFilter}`);
         const results = await r.json();
-
-        if (!results.length) {
-          grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No results found</div>';
-          return;
-        }
-
+        if (!results.length) { grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No results</div>'; return; }
         grid.innerHTML = results.map((item, i) => `
-      <div class="result-card" onclick="selectResult(${i})" data-index="${i}">
+      <div class="result-card" onclick="selectResult(${i})">
         <img class="result-thumb" src="${item.thumbnail || ''}" onerror="this.style.display='none'">
         <div class="result-type ${item.type}">${item.type}</div>
         <div class="result-title">${item.title}</div>
         <div class="result-artist">${item.artist}${item.duration ? ' · ' + item.duration : ''}${item.year ? ' · ' + item.year : ''}${item.count ? ' · ' + item.count + ' tracks' : ''}</div>
-      </div>
-    `).join('');
-
-        // Store results
+      </div>`).join('');
         grid._results = results;
         selectedResult = null;
         document.getElementById('selectedSummary').classList.remove('visible');
         document.getElementById('addBtn').disabled = true;
-
       } catch (e) {
         grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">Search failed</div>';
       }
@@ -801,51 +972,28 @@
 
     function selectResult(i) {
       const grid = document.getElementById('resultsGrid');
-      const results = grid._results;
-      if (!results) return;
-
-      selectedResult = results[i];
-      document.querySelectorAll('.result-card').forEach((c, idx) => {
-        c.classList.toggle('selected', idx === i);
-      });
-
+      if (!grid._results) return;
+      selectedResult = grid._results[i];
+      document.querySelectorAll('.result-card').forEach((c, idx) => c.classList.toggle('selected', idx === i));
       const summary = document.getElementById('selectedSummary');
       summary.classList.add('visible');
-      summary.innerHTML = `
-    <strong>${selectedResult.title}</strong> by ${selectedResult.artist}
-    <span style="color:var(--muted);margin-left:8px;">${selectedResult.type}</span>
-  `;
-
+      summary.innerHTML = `<strong>${selectedResult.title}</strong> by ${selectedResult.artist} <span style="color:var(--muted);margin-left:8px;">${selectedResult.type}</span>`;
       document.getElementById('addBtn').disabled = !document.getElementById('uidInput').value.trim();
     }
-
-    // Allow pressing Enter to search
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('searchInput').addEventListener('keydown', e => {
-        if (e.key === 'Enter') doSearch();
-      });
-      document.getElementById('uidInput').addEventListener('input', () => {
-        document.getElementById('addBtn').disabled = !document.getElementById('uidInput').value.trim() || !selectedResult;
-      });
-    });
 
     // ── Mapping CRUD ──────────────────────────────────────────────────────────────
     async function addMapping() {
       const uid = document.getElementById('uidInput').value.trim();
       if (!uid || !selectedResult) return;
-
       const btn = document.getElementById('addBtn');
-      btn.disabled = true;
-      btn.textContent = 'Mapping…';
-
+      btn.disabled = true; btn.textContent = 'Mapping…';
       try {
         const r = await fetch('/api/mappings/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid, ...selectedResult })
         });
-        const data = await r.json();
-        if (data.success) {
+        if ((await r.json()).success) {
           document.getElementById('uidInput').value = '';
           selectedResult = null;
           document.getElementById('selectedSummary').classList.remove('visible');
@@ -853,9 +1001,7 @@
           pollMappings();
         }
       } catch (e) { }
-
-      btn.textContent = 'Map to tag';
-      btn.disabled = false;
+      btn.textContent = 'Map to tag'; btn.disabled = false;
     }
 
     async function deleteMapping(uid) {
@@ -869,11 +1015,17 @@
       pollMappings();
     }
 
-    // ── Polling ───────────────────────────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────────────────────────────
+    document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    document.getElementById('uidInput').addEventListener('input', () => {
+      document.getElementById('addBtn').disabled = !document.getElementById('uidInput').value.trim() || !selectedResult;
+    });
+
     setInterval(pollTag, 1000);
     setInterval(pollMappings, 2000);
-    pollTag();
-    pollMappings();
+    setInterval(pollPlayback, 1000);
+    setInterval(pollBattery, 30000);  // every 30s, matches Pico update rate
+    pollTag(); pollMappings(); pollPlayback(); pollBattery();
   </script>
 </body>
 
