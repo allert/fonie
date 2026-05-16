@@ -100,7 +100,20 @@ def extract_dominant_color(thumbnail_url):
         print(f"⚠️  Color extraction failed: {e}")
         return None
 
-# ── Pico communication ────────────────────────────────────────────────────────
+# ── ESP32 / Pico communication ────────────────────────────────────────────────
+def send_esp32(payload):
+    global esp32_serial
+    if not esp32_serial:
+        return
+    try:
+        msg = json.dumps(payload)
+        esp32_serial.write((msg + '\n').encode())
+        print(f"→ ESP32: {msg}")
+        log_uart('→', 'esp32', msg)
+        sys.stdout.flush()
+    except Exception as e:
+        print(f"❌ ESP32 send error: {e}")
+
 def send_pico(event, **kwargs):
     global pico_serial
     if not pico_serial:
@@ -362,8 +375,56 @@ def handle_esp32_event(event):
         print(f"📱 TAG OFF: {uid}")
         current_tag = {'present': False, 'uid': None, 'timestamp': datetime.now().isoformat()}
         send_pico("TAG_OFF", uid=uid); stop_playback(); active_rfid_tag = None
+    elif event_type == 'WIFI_CONFIG':
+        ssid = event.get('ssid', '')
+        password = event.get('pass', '')
+        print(f"📡 Received Wi-Fi credentials for: {ssid}")
+        try:
+            res = subprocess.run(['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', password], capture_output=True, text=True)
+            if res.returncode == 0:
+                print("✅ Wi-Fi connected successfully!")
+                settings = load_settings()
+                settings['wifi_ssid'] = ssid
+                settings['wifi_pass'] = password
+                save_settings(settings)
+                global wifi_state
+                wifi_state['sta_started'] = False # Force reconnect notification to ESP32
+            else:
+                print(f"❌ Wi-Fi connect failed: {res.stderr}")
+        except Exception as e:
+            print(f"❌ nmcli error: {e}")
     elif event_type == 'READY':
         print("✅ ESP32 ready!"); send_pico("IDLE")
+
+# ── Wi-Fi Monitor ─────────────────────────────────────────────────────────────
+wifi_state = {'connected': False, 'ap_started': False, 'sta_started': False}
+
+def check_wifi_connection():
+    try:
+        res = subprocess.run(['nmcli', '-t', '-f', 'STATE', 'general'], capture_output=True, text=True)
+        return 'connected' in res.stdout
+    except:
+        return False
+
+def wifi_monitor_thread():
+    global wifi_state
+    while True:
+        is_connected = check_wifi_connection()
+        if is_connected:
+            if not wifi_state['sta_started']:
+                settings = load_settings()
+                ssid = settings.get('wifi_ssid', '')
+                password = settings.get('wifi_pass', '')
+                if ssid:
+                    send_esp32({"event": "WIFI_CONNECT", "ssid": ssid, "pass": password})
+                    wifi_state['sta_started'] = True
+                    wifi_state['ap_started']  = False
+        else:
+            if not wifi_state['ap_started']:
+                send_esp32({"event": "WIFI_AP_START"})
+                wifi_state['ap_started']  = True
+                wifi_state['sta_started'] = False
+        time.sleep(10)
 
 # ── Web routes ────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -556,6 +617,7 @@ if __name__ == '__main__':
     pico_connect()
     threading.Thread(target=serial_listener, daemon=True).start()
     threading.Thread(target=pico_listener,   daemon=True).start()
-    print("📡 Serial listeners started")
+    threading.Thread(target=wifi_monitor_thread, daemon=True).start()
+    print("📡 Serial listeners and Wi-Fi monitor started")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5001, debug=False)

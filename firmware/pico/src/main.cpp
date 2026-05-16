@@ -58,6 +58,7 @@ State preVolumeState = S_OFF;
 unsigned long stateStart = 0;
 unsigned long lastFrame  = 0;
 
+void reportSoC();
 float   spinPos    = 0.0;
 float   breathVal  = 1.0;
 int     breathDir  = -1;
@@ -101,6 +102,7 @@ Button buttons[] = {
 #define NUM_BUTTONS 5
 
 // ── INA226 ────────────────────────────────────────────────────────────────────
+void reportSoC();
 void ina226_writeReg(uint8_t reg, uint16_t val) {
   Wire1.beginTransmission(INA226_ADDR);
   Wire1.write(reg);
