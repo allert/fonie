@@ -4,8 +4,10 @@
 __pycache__/
 .DS_Store
 rfid_mappings.json
+settings.json
 cert.pem
 key.pem
 *.img
 *.wav
-media/*.*
+media/
+.pio/

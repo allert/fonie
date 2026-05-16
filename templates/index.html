@@ -1167,7 +1167,10 @@
           </div>
 
           <div class="debug-card">
-            <h3>Connections</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <h3 style="margin:0;">Connections</h3>
+              <button class="btn btn-ghost" onclick="pingConnections()" style="padding:2px 8px; font-size:1.2em;" title="Refresh connections">&#8635;</button>
+            </div>
             <div class="debug-row">
               <span class="debug-key">Pico</span>
               <span class="debug-val"><span class="conn-dot" id="dot-pico"></span><span id="lbl-pico">—</span></span>
@@ -1250,6 +1253,9 @@
       document.getElementById('page-' + name).classList.add('active');
       el.classList.add('active');
       activePage = name;
+      if (name === 'debug') {
+        pingConnections();
+      }
     }
 
     function updateBattery(b) {
@@ -1334,6 +1340,14 @@
           renderUartLog();
         }
       } catch (e) { }
+    }
+
+    async function pingConnections() {
+      document.getElementById('lbl-pico').textContent = 'checking...';
+      document.getElementById('lbl-esp32').textContent = 'checking...';
+      document.getElementById('dot-pico').className = 'conn-dot';
+      document.getElementById('dot-esp32').className = 'conn-dot';
+      try { await fetch('/api/ping', { method: 'POST' }); } catch (e) {}
     }
 
     async function pollDebug() {

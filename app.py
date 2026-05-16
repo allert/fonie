@@ -34,6 +34,8 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 # ── Global state ──────────────────────────────────────────────────────────────
 esp32_serial    = None
 pico_serial     = None
+pico_is_alive   = False
+esp32_is_alive  = False
 active_rfid_tag = None
 current_tag     = {'present': False, 'uid': None, 'timestamp': None}
 mpv_process     = None
@@ -126,10 +128,12 @@ def pico_connect():
         pico_serial = None
 
 def handle_pico_message(data):
-    global battery_state, button_state, playback_state
+    global battery_state, button_state, playback_state, pico_is_alive
     event = data.get('event')
 
-    if event == 'SOC':
+    if event == 'PONG':
+        pico_is_alive = True
+    elif event == 'SOC':
         battery_state = {
             'level':    data.get('level'),
             'charging': data.get('charging', False),
@@ -333,10 +337,12 @@ def serial_listener():
             print(f"❌ Error: {e}"); threading.Event().wait(1)
 
 def handle_esp32_event(event):
-    global active_rfid_tag, current_tag
+    global active_rfid_tag, current_tag, esp32_is_alive
     event_type = event.get('event')
     uid        = event.get('uid')
-    if event_type == 'TAG_ON':
+    if event_type == 'PONG':
+        esp32_is_alive = True
+    elif event_type == 'TAG_ON':
         print(f"📱 TAG ON: {uid}")
         mappings  = load_mappings()
         is_mapped = uid in mappings and mappings[uid].get('status') == 'ready'
@@ -480,9 +486,23 @@ def api_debug():
         'playback':        playback_state,
         'tag':             current_tag,
         'brightness':      load_settings().get('brightness', {}),
-        'pico_connected':  pico_serial is not None,
-        'esp32_connected': esp32_serial is not None,
+        'pico_connected':  pico_is_alive,
+        'esp32_connected': esp32_is_alive,
     })
+
+@app.route('/api/ping', methods=['POST'])
+def api_ping():
+    global pico_is_alive, esp32_is_alive
+    pico_is_alive = False
+    esp32_is_alive = False
+    send_pico("PING")
+    if esp32_serial:
+        try:
+            esp32_serial.write(b'{"event":"PING"}\n')
+        except:
+            pass
+    time.sleep(0.5)
+    return jsonify({'success': True})
 
 @app.route('/api/playback/status')
 def playback_status():
