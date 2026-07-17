@@ -1,12 +1,20 @@
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
+#include <Updater.h>
+#include <LittleFS.h>
+#include <Wire.h>
 
 // ── Pin config ────────────────────────────────────────────────────────────────
 #define RGB_PIN     16
 #define RING_PIN     2
 #define MATRIX_PIN   3
+#define STRIPL_PIN   4
+#define STRIPR_PIN   5
 #define RING_LEDS   24
 #define MATRIX_LEDS 64
+#define STRIP_LEDS  26
+
+#define POLOLU_OFF_PIN 14
 
 // INA226 I2C (same pins as old MAX17043)
 #define INA226_ADDR 0x40
@@ -49,11 +57,18 @@
 Adafruit_NeoPixel rgb(1,            RGB_PIN,    NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel ring(RING_LEDS,   RING_PIN,   NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel matrix(MATRIX_LEDS, MATRIX_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel stripL(STRIP_LEDS, STRIPL_PIN, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel stripR(STRIP_LEDS, STRIPR_PIN, NEO_GRBW + NEO_KHZ800);
 
 // ── State machine ─────────────────────────────────────────────────────────────
-enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME };
-State currentState   = S_OFF;
+enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN };
+State currentState   = S_BOOTING;
 State preVolumeState = S_OFF;
+
+// Play button long-press tracking
+unsigned long playPressStart = 0;
+bool playHeld = false;
+bool shutdownInitiated = false;
 
 unsigned long stateStart = 0;
 unsigned long lastFrame  = 0;
@@ -81,7 +96,7 @@ unsigned long lastRestStart  = 0;
 bool          atRest         = false;
 
 #define SOC_READ_INTERVAL_MS    500    // read INA226 every 500ms
-#define SOC_REPORT_INTERVAL_MS  30000  // report to Pi every 30s
+#define SOC_REPORT_INTERVAL_MS  2000   // report to Pi every 2s
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
 struct Button {
@@ -384,7 +399,11 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b) {
   rgb.setPixelColor(0, rgb.Color(r, g, b)); rgb.show();
 }
 void allOff() {
-  ring.clear(); ring.show(); matrixClear(); matrix.show(); setRGB(0,0,0);
+  ring.clear(); ring.show(); 
+  matrixClear(); matrix.show(); 
+  stripL.clear(); stripL.show();
+  stripR.clear(); stripR.show();
+  setRGB(0,0,0);
 }
 
 void setState(State s) {
@@ -402,6 +421,79 @@ void overlaySoC() {
   drawSoC((int)socPercent);
 }
 
+void frameShutdown() {
+  unsigned long elapsed = millis() - stateStart;
+
+  if (elapsed < 3000) {
+    // Fade all LEDs from current brightness to zero over 3 seconds
+    float fade = 1.0f - ((float)elapsed / 3000.0f);
+    ring.fill(ring.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade)));
+    ring.show();
+    drawMatrixSolid((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade));
+    
+    // Speaker strips fade
+    stripL.fill(stripL.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade), 0));
+    stripR.fill(stripR.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade), 0));
+    stripL.show(); stripR.show();
+    
+    setRGB((uint8_t)(animR * fade * 0.2f), (uint8_t)(animG * fade * 0.2f), (uint8_t)(animB * fade * 0.2f));
+  } else if (elapsed < 3200) {
+    // LEDs off, conserve power during Pi shutdown
+    allOff();
+  } else if (elapsed >= 20000) {
+    // Pi has had enough time to shut down cleanly. Cut power rails!
+    digitalWrite(POLOLU_OFF_PIN, HIGH);
+    // Never reach past this line
+    while (1) {
+      delay(10);
+    }
+  }
+}
+
+void frameBooting() {
+  unsigned long now = millis();
+  
+  // Beautiful flowing gradient wave traveling up the side strips
+  float waveSpeed = 0.004f;
+  float spatialFreq = 0.3f;
+  
+  stripL.clear();
+  stripR.clear();
+  
+  for (int i = 0; i < STRIP_LEDS; i++) {
+    float phase = (now * waveSpeed) - (i * spatialFreq);
+    float s = (sin(phase) + 1.0f) * 0.5f; // 0.0 to 1.0
+    
+    // Transition from deep blue (s=0) to bright teal/cyan (s=1)
+    uint8_t r = 0;
+    uint8_t g = (uint8_t)(180 * s + 10 * (1.0f - s));
+    uint8_t b = (uint8_t)(255 * s + 80 * (1.0f - s));
+    uint8_t w = (uint8_t)(40 * s); // touch of warm white at peak intensity
+    
+    stripL.setPixelColor(i, stripL.Color(r, g, b, w));
+    stripR.setPixelColor(i, stripR.Color(r, g, b, w));
+  }
+  stripL.show();
+  stripR.show();
+  
+  // Cohesive breathing pulse on the ring
+  float ringPhase = now * 0.002f;
+  float ringBreath = (sin(ringPhase) + 1.0f) * 0.5f;
+  uint8_t ringR = 0;
+  uint8_t ringG = (uint8_t)(40 * ringBreath);
+  uint8_t ringB = (uint8_t)(80 * ringBreath);
+  
+  ring.fill(ring.Color(ringR, ringG, ringB));
+  ring.show();
+  
+  // Keep matrix clear during boot
+  matrixClear();
+  matrix.show();
+  
+  // Breath on status RGB
+  setRGB(0, (uint8_t)(20 * ringBreath), (uint8_t)(40 * ringBreath));
+}
+
 // ── Animation frames ──────────────────────────────────────────────────────────
 void frameBurst() {
   unsigned long elapsed = millis() - stateStart;
@@ -416,6 +508,12 @@ void frameBurst() {
   }
   ring.show();
   drawMatrixBurst(progress, animR, animG, animB);
+  
+  float stripFade = 1.0 - progress;
+  stripL.fill(stripL.Color((uint8_t)(animR*stripFade), (uint8_t)(animG*stripFade), (uint8_t)(animB*stripFade)));
+  stripR.fill(stripR.Color((uint8_t)(animR*stripFade), (uint8_t)(animG*stripFade), (uint8_t)(animB*stripFade)));
+  stripL.show(); stripR.show();
+  
   overlaySoC();
   setRGB(animR/2, animG/2, animB/2);
 }
@@ -435,6 +533,25 @@ void framePlaying() {
   ring.show();
   waveOffset += 0.08;
   drawMatrixWave(animR, animG, animB);
+  
+  // Breath effect for speaker strips
+  stripL.clear(); stripR.clear();
+  for (int i = 0; i < STRIP_LEDS; i++) {
+    // Wave moving along the strip
+    float phase = waveOffset + (i * 0.4); 
+    float s = (sin(phase) + 1.0) / 2.0;
+    
+    // Combine wave with overall breath
+    float intensity = s * breathVal;
+    uint8_t r = (uint8_t)(animR * intensity);
+    uint8_t g = (uint8_t)(animG * intensity);
+    uint8_t b = (uint8_t)(animB * intensity);
+    
+    stripL.setPixelColor(i, stripL.Color(r, g, b, 0));
+    stripR.setPixelColor(i, stripR.Color(r, g, b, 0));
+  }
+  stripL.show(); stripR.show();
+  
   overlaySoC();
   setRGB(animR/4, animG/4, animB/4);
 }
@@ -449,6 +566,11 @@ void framePaused() {
     ring.setPixelColor(i, ring.Color(animR/2, animG/2, animB/2));
   ring.show();
   drawMatrixCheckerboard(animR, animG, animB);
+  
+  stripL.fill(stripL.Color((uint8_t)(animR*0.3), (uint8_t)(animG*0.3), (uint8_t)(animB*0.3)));
+  stripR.fill(stripR.Color((uint8_t)(animR*0.3), (uint8_t)(animG*0.3), (uint8_t)(animB*0.3)));
+  stripL.show(); stripR.show();
+  
   overlaySoC();
   setRGB(animR/4, animG/4, animB/4);
 }
@@ -459,6 +581,11 @@ void frameFade() {
   ring.fill(ring.Color((uint8_t)(animR*fadeVal),(uint8_t)(animG*fadeVal),(uint8_t)(animB*fadeVal)));
   ring.show();
   drawMatrixSolid((uint8_t)(animR*fadeVal),(uint8_t)(animG*fadeVal),(uint8_t)(animB*fadeVal));
+  
+  stripL.fill(stripL.Color((uint8_t)(animR*fadeVal), (uint8_t)(animG*fadeVal), (uint8_t)(animB*fadeVal)));
+  stripR.fill(stripR.Color((uint8_t)(animR*fadeVal), (uint8_t)(animG*fadeVal), (uint8_t)(animB*fadeVal)));
+  stripL.show(); stripR.show();
+  
   overlaySoC();
   setRGB((uint8_t)(animR*fadeVal*0.2),(uint8_t)(animG*fadeVal*0.2),(uint8_t)(animB*fadeVal*0.2));
 }
@@ -475,6 +602,17 @@ void frameVolume() {
     ring.setPixelColor(i, ring.Color(r, g, 0));
   }
   ring.show();
+  
+  int stripLit = (volumeLevel * STRIP_LEDS) / 100;
+  stripL.clear(); stripR.clear();
+  for (int i = 0; i < stripLit; i++) {
+    float t   = (float)i / STRIP_LEDS;
+    uint8_t r = t < 0.5 ? (uint8_t)(t*2*80) : 255;
+    uint8_t g = t < 0.5 ? 255 : (uint8_t)(255-(t-0.5)*2*255);
+    stripL.setPixelColor(i, stripL.Color(r, g, 0));
+    stripR.setPixelColor(i, stripR.Color(r, g, 0));
+  }
+  stripL.show(); stripR.show();
 }
 
 void frameOff() {
@@ -485,7 +623,9 @@ void frameOff() {
 void onReady() {
   ring.fill(ring.Color(180,180,180));
   drawMatrixSolid(180,180,180);
-  ring.show(); setRGB(180,180,180);
+  stripL.fill(stripL.Color(180,180,180));
+  stripR.fill(stripR.Color(180,180,180));
+  ring.show(); stripL.show(); stripR.show(); setRGB(180,180,180);
   delay(200);
   setState(S_OFF);
 }
@@ -529,10 +669,14 @@ String extractValue(const String& json, const String& key) {
 void handleEvent(const String& line) {
   Serial.print("Pi: "); Serial.println(line);
   String event = extractValue(line, "event");
-  if      (event == "READY" || event == "IDLE") onReady();
+  if      (event == "PING")     Serial1.println("{\"event\":\"PONG\"}");
+  else if (event == "READY" || event == "IDLE") onReady();
   else if (event == "PING") { Serial1.println("{\"event\":\"PONG\"}"); Serial.println("{\"event\":\"PONG\"}"); }
   else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true");
   else if (event == "TAG_OFF" || event == "TAG_UNKNOWN") setState(S_TAG_OFF_FADE);
+  else if (event == "SHUTDOWN" || (event == "EVENT" && extractValue(line, "name") == "shutdown")) {
+    setState(S_SHUTDOWN);
+  }
   else if (event == "PLAYING") {
     String rs = extractValue(line, "r");
     String gs = extractValue(line, "g");
@@ -553,6 +697,68 @@ void handleEvent(const String& line) {
     String m = extractValue(line, "matrix");
     if (r.length()) { ring.setBrightness(r.toInt());   ring.show(); }
     if (m.length()) { matrix.setBrightness(m.toInt()); matrix.show(); }
+  }
+  else if (event == "ENTER_OTA") {
+    Serial.println("Entering UART OTA mode...");
+    
+    // Flush any pending bytes in the RX buffer BEFORE sending OTA_READY
+    while (Serial1.available()) Serial1.read();
+    
+    Serial1.println("{\"event\":\"OTA_READY\"}");
+    
+    while (!Serial1.available()) { delay(1); }
+    String sizeStr = Serial1.readStringUntil('\n');
+    sizeStr.trim();
+    size_t fileSize = sizeStr.toInt();
+    
+    Serial1.printf("{\"event\":\"DEBUG\",\"sizeStr\":\"%s\",\"fileSize\":%d}\n", sizeStr.c_str(), fileSize);
+    
+    if (fileSize > 0) {
+      bool ok = Update.begin(fileSize);
+      Serial1.printf("{\"event\":\"DEBUG\",\"updateBegin\":%s}\n", ok ? "true" : "false");
+      if (ok) {
+        Serial1.println("{\"event\":\"OTA_BEGIN\"}");
+        
+        size_t written = 0;
+        uint8_t buf[1024];
+        
+        while (written < fileSize) {
+          size_t toRead = fileSize - written;
+          if (toRead > sizeof(buf)) toRead = sizeof(buf);
+          
+          size_t chunkRead = 0;
+          unsigned long lastData = millis();
+          while (chunkRead < toRead && (millis() - lastData < 5000)) {
+            if (Serial1.available()) {
+              buf[chunkRead++] = Serial1.read();
+              lastData = millis();
+            }
+          }
+          
+          if (chunkRead == toRead) {
+            Update.write(buf, toRead);
+            written += toRead;
+            Serial1.println("ACK");
+          } else {
+            Serial1.println("NACK_TIMEOUT");
+            break; // Abort on timeout
+          }
+        }
+        
+        if (written == fileSize && Update.end()) {
+          Serial1.println("{\"event\":\"OTA_SUCCESS\"}");
+          delay(100);
+          rp2040.restart();
+        } else {
+          Serial1.println("{\"event\":\"OTA_FAILED\"}");
+          rp2040.restart();
+        }
+      } else {
+        Serial1.println("{\"event\":\"OTA_FAILED_BEGIN\"}");
+      }
+    } else {
+      Serial1.println("{\"event\":\"OTA_FAILED_BEGIN\"}");
+    }
   }
 }
 
@@ -590,12 +796,40 @@ void handleButtonPress(const char* name) {
 void pollButtons() {
   unsigned long now = millis();
   for (int i = 0; i < NUM_BUTTONS; i++) {
-    bool raw = digitalRead(buttons[i].pin) == HIGH;
+    bool raw = digitalRead(buttons[i].pin) == LOW; // Active-low: LOW when pressed
     if (raw != buttons[i].lastRaw) { buttons[i].lastChange = now; buttons[i].lastRaw = raw; }
     if ((now - buttons[i].lastChange) >= DEBOUNCE_MS && raw != buttons[i].state) {
       buttons[i].state = raw;
-      sendButtonEvent(buttons[i].name, raw);
-      if (raw) handleButtonPress(buttons[i].name);
+      
+      if (strcmp(buttons[i].name, "play") == 0) {
+        // Special Play button active-low/long-press handling
+        sendButtonEvent(buttons[i].name, raw);
+        if (raw) {
+          playPressStart = now;
+          playHeld = true;
+          shutdownInitiated = false;
+        } else {
+          playHeld = false;
+          if (!shutdownInitiated) {
+            handleButtonPress(buttons[i].name);
+          }
+          shutdownInitiated = false;
+        }
+      } else {
+        // Standard buttons active-low
+        sendButtonEvent(buttons[i].name, raw);
+        if (raw) handleButtonPress(buttons[i].name);
+      }
+    }
+  }
+
+  // Monitor Play long-press outside debounce loop
+  if (playHeld && !shutdownInitiated) {
+    if (now - playPressStart >= 3000) {
+      shutdownInitiated = true;
+      Serial.println("Play button long-press detected! Sending SHUTDOWN to Pi.");
+      Serial1.println("{\"event\":\"SHUTDOWN\"}");
+      setState(S_SHUTDOWN);
     }
   }
 }
@@ -606,17 +840,29 @@ String inputBuffer = "";
 void setup() {
   Serial.begin(115200);
 
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS mount failed!");
+  } else {
+    Serial.println("LittleFS mount success.");
+  }
+
   rgb.begin();    rgb.setBrightness(80);
   ring.begin();   ring.setBrightness(60);
   matrix.begin(); matrix.setBrightness(40);
+  stripL.begin(); stripL.setBrightness(100);
+  stripR.begin(); stripR.setBrightness(100);
   allOff();
   delay(200);
 
-  pinMode(BTN_PREV,    INPUT_PULLDOWN);
-  pinMode(BTN_PLAY,    INPUT_PULLDOWN);
-  pinMode(BTN_NEXT,    INPUT_PULLDOWN);
-  pinMode(BTN_VOLUP,   INPUT_PULLDOWN);
-  pinMode(BTN_VOLDOWN, INPUT_PULLDOWN);
+  pinMode(BTN_PREV,    INPUT_PULLUP);
+  pinMode(BTN_PLAY,    INPUT_PULLUP);
+  pinMode(BTN_NEXT,    INPUT_PULLUP);
+  pinMode(BTN_VOLUP,   INPUT_PULLUP);
+  pinMode(BTN_VOLDOWN, INPUT_PULLUP);
+
+  // Pololu OFF pin
+  pinMode(POLOLU_OFF_PIN, OUTPUT);
+  digitalWrite(POLOLU_OFF_PIN, LOW); // keep power rails alive
 
   // Startup rainbow
   uint32_t colors[6] = {
@@ -626,8 +872,10 @@ void setup() {
   for (int i = 0; i < 6; i++) {
     rgb.setPixelColor(0, colors[i]);
     ring.fill(colors[i]);
+    stripL.fill(colors[i]);
+    stripR.fill(colors[i]);
     for (int p = 0; p < MATRIX_LEDS; p++) matrix.setPixelColor(p, colors[i]);
-    rgb.show(); ring.show(); matrix.show();
+    rgb.show(); ring.show(); matrix.show(); stripL.show(); stripR.show();
     delay(120);
   }
   allOff();
@@ -654,6 +902,10 @@ void setup() {
   lastRestStart = millis();
 
   Serial1.setTX(0); Serial1.setRX(1); Serial1.begin(115200);
+
+  // Start in booting state and notify the Pi
+  setState(S_BOOTING);
+  Serial1.println("{\"event\":\"BOOTING\"}");
 }
 
 void loop() {
@@ -661,12 +913,14 @@ void loop() {
   if (millis() - lastFrame >= 16) {
     lastFrame = millis();
     switch (currentState) {
+      case S_BOOTING:      frameBooting(); break;
       case S_TAG_ON_BURST: frameBurst();   break;
       case S_PLAYING:      framePlaying(); break;
       case S_PAUSED:       framePaused();  break;
       case S_TAG_OFF_FADE: frameFade();    break;
       case S_VOLUME:       frameVolume();  break;
       case S_OFF:          frameOff();     break;
+      case S_SHUTDOWN:     frameShutdown(); break;
     }
   }
 

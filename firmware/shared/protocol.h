@@ -21,5 +21,6 @@
 #define EVENT_WIFI_CONFIG    "WIFI_CONFIG"
 #define EVENT_PING           "PING"
 #define EVENT_PONG           "PONG"
+#define EVENT_BOOTING        "BOOTING"
 
 #endif // PROTOCOL_H

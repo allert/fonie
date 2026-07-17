@@ -43,11 +43,11 @@ download_queue  = {}
 playback_state  = {'paused': False, 'volume': 80}
 battery_state   = {'level': None, 'charging': False, 'voltage': None, 'current': 0.0}
 button_state    = {
-    'prev':   {'pressed': False, 'last_event': None},
-    'play':   {'pressed': False, 'last_event': None},
-    'next':   {'pressed': False, 'last_event': None},
-    'vol_up': {'pressed': False, 'last_event': None},
-    'vol_dn': {'pressed': False, 'last_event': None},
+    'prev':   {'pressed': False, 'last_event': None, 'triggered': False},
+    'play':   {'pressed': False, 'last_event': None, 'triggered': False},
+    'next':   {'pressed': False, 'last_event': None, 'triggered': False},
+    'vol_up': {'pressed': False, 'last_event': None, 'triggered': False},
+    'vol_dn': {'pressed': False, 'last_event': None, 'triggered': False},
 }
 uart_log = deque(maxlen=100)  # ring buffer: last 100 UART messages
 ytmusic = YTMusic()
@@ -146,6 +146,17 @@ def handle_pico_message(data):
 
     if event == 'PONG':
         pico_is_alive = True
+    elif event == 'BOOTING':
+        print("Pico reported BOOTING. Sending READY to handshake.")
+        send_pico("READY")
+        b = load_settings().get('brightness', {})
+        if b:
+            send_pico("BRIGHTNESS", ring=b.get('ring', 60), matrix=b.get('matrix', 40))
+    elif event == 'SHUTDOWN':
+        print("⚠️  Shutdown requested by Pico (long-press)")
+        play_system_sound('shutdown')
+        time.sleep(1)  # let the sound play
+        subprocess.run(['sudo', 'shutdown', '-h', 'now'])
     elif event == 'SOC':
         battery_state = {
             'level':    data.get('level'),
@@ -159,8 +170,11 @@ def handle_pico_message(data):
         btn     = data.get('button')
         pressed = data.get('pressed', False)
         if btn in button_state:
-            button_state[btn]['pressed']    = pressed
-            button_state[btn]['last_event'] = datetime.now().isoformat()
+            if button_state[btn]['pressed'] != pressed:
+                button_state[btn]['pressed']    = pressed
+                button_state[btn]['last_event'] = datetime.now().isoformat()
+                if not pressed:
+                    button_state[btn]['triggered'] = False
         print(f"🔘 Button {btn}: {'▼' if pressed else '▲'}")
 
     elif event == 'BUTTON_ACTION':
@@ -241,6 +255,13 @@ def play_sound(filename):
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"❌ Sound error: {e}")
+
+def play_system_sound(event_name, default_filename=None):
+    settings = load_settings()
+    sounds_map = settings.get('system_sounds', {})
+    filename = sounds_map.get(event_name, default_filename)
+    if filename:
+        play_sound(filename)
 
 def stop_playback():
     global mpv_process
@@ -368,8 +389,8 @@ def handle_esp32_event(event):
             'color':   mappings[uid].get('color') if is_mapped else None,
         }
         send_pico("TAG_ON", mapped=is_mapped)
-        if is_mapped: play_sound('tag_mapped_32.wav'); play_mapping(mappings[uid])
-        else:         play_sound('tag_unknown_32.wav'); send_pico("TAG_UNKNOWN")
+        if is_mapped: play_system_sound('tag_mapped', 'tag_mapped_32.wav'); play_mapping(mappings[uid])
+        else:         play_system_sound('tag_unknown', 'tag_unknown_32.wav'); send_pico("TAG_UNKNOWN")
         active_rfid_tag = uid
     elif event_type == 'TAG_OFF':
         print(f"📱 TAG OFF: {uid}")
@@ -426,6 +447,41 @@ def wifi_monitor_thread():
                 wifi_state['sta_started'] = False
         time.sleep(10)
 
+def button_monitor_thread():
+    while True:
+        now = datetime.now()
+        
+        # Check Play for 5s (Shutdown)
+        if button_state['play']['pressed'] and button_state['play']['last_event'] and not button_state['play']['triggered']:
+            if not button_state['prev']['pressed']: # Ensure prev is not also held
+                start_time = datetime.fromisoformat(button_state['play']['last_event'])
+                if (now - start_time).total_seconds() >= 5.0:
+                    print("⚠️  Shutdown triggered (Play held for 5s)")
+                    button_state['play']['triggered'] = True
+                    play_system_sound('shutdown')
+                    send_pico("EVENT", name="shutdown") # Tell Pico to sleep/power off LEDs
+                    subprocess.run(['sudo', 'shutdown', '-h', 'now'])
+                    
+        # Check Play + Prev for 5s (Captive Portal)
+        if button_state['play']['pressed'] and button_state['prev']['pressed'] and \
+           button_state['play']['last_event'] and button_state['prev']['last_event'] and \
+           not button_state['play']['triggered'] and not button_state['prev']['triggered']:
+            play_start = datetime.fromisoformat(button_state['play']['last_event'])
+            prev_start = datetime.fromisoformat(button_state['prev']['last_event'])
+            # Use the latest press time of the two
+            start_time = max(play_start, prev_start)
+            if (now - start_time).total_seconds() >= 5.0:
+                print("⚠️  Captive Portal triggered (Play + Prev held for 5s)")
+                button_state['play']['triggered'] = True
+                button_state['prev']['triggered'] = True
+                play_system_sound('captive_portal')
+                send_esp32({"event": "WIFI_AP_START"})
+                global wifi_state
+                wifi_state['ap_started']  = True
+                wifi_state['sta_started'] = False
+                
+        time.sleep(0.1)
+
 # ── Web routes ────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
@@ -437,9 +493,10 @@ def search():
     mtype = request.args.get('type', 'all')
     if not query or len(query) < 2: return jsonify([])
     try:
+        yt = YTMusic()
         results = []
         if mtype in ('all', 'track'):
-            for t in ytmusic.search(query, filter='songs', limit=5):
+            for t in yt.search(query, filter='songs', limit=5):
                 results.append({'type': 'track', 'id': t.get('videoId'),
                     'title': t.get('title', 'Unknown'),
                     'artist': ', '.join([a['name'] for a in t.get('artists', [])]),
@@ -447,14 +504,14 @@ def search():
                     'duration': t.get('duration', ''),
                     'thumbnail': t.get('thumbnails', [{}])[-1].get('url', ''),})
         if mtype in ('all', 'album'):
-            for a in ytmusic.search(query, filter='albums', limit=5):
+            for a in yt.search(query, filter='albums', limit=5):
                 results.append({'type': 'album', 'id': a.get('browseId'),
                     'title': a.get('title', 'Unknown'),
                     'artist': ', '.join([ar['name'] for ar in a.get('artists', [])]),
                     'year': a.get('year', ''),
                     'thumbnail': a.get('thumbnails', [{}])[-1].get('url', ''),})
         if mtype in ('all', 'playlist'):
-            for p in ytmusic.search(query, filter='playlists', limit=5):
+            for p in yt.search(query, filter='playlists', limit=5):
                 results.append({'type': 'playlist', 'id': p.get('browseId'),
                     'title': p.get('title', 'Unknown'),
                     'artist': p.get('author', ''), 'count': p.get('itemCount', ''),
@@ -565,6 +622,19 @@ def api_ping():
     time.sleep(0.5)
     return jsonify({'success': True})
 
+@app.route('/api/test_ap', methods=['POST'])
+def api_test_ap():
+    send_esp32({"event": "WIFI_AP_START"})
+    global wifi_state
+    wifi_state['ap_started'] = True
+    wifi_state['sta_started'] = False
+    return jsonify({'success': True})
+
+@app.route('/api/test_leds', methods=['POST'])
+def api_test_leds():
+    send_pico("PLAYING", r=255, g=0, b=128)
+    return jsonify({'success': True})
+
 @app.route('/api/playback/status')
 def playback_status():
     is_running = mpv_process is not None and mpv_process.poll() is None
@@ -609,6 +679,82 @@ def api_pico_event():
     event = data.pop('event'); send_pico(event, **data)
     return jsonify({'success': True})
 
+@app.route('/api/settings', methods=['GET'])
+def api_settings_get():
+    return jsonify(load_settings())
+
+@app.route('/api/settings', methods=['POST'])
+def api_settings_post():
+    data = request.json
+    settings = load_settings()
+    for k, v in data.items():
+        settings[k] = v
+    save_settings(settings)
+    return jsonify({'success': True, 'settings': settings})
+
+@app.route('/api/media/sounds', methods=['GET'])
+def api_media_sounds():
+    if not os.path.exists(SOUNDS_DIR): return jsonify([])
+    sounds = [f for f in os.listdir(SOUNDS_DIR) if f.endswith(('.wav', '.mp3'))]
+    return jsonify(sounds)
+
+@app.route('/api/media/sounds/upload', methods=['POST'])
+def api_media_sounds_upload():
+    if 'file' not in request.files: return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '': return jsonify({'error': 'No selected file'}), 400
+    if file and file.filename.endswith(('.wav', '.mp3')):
+        file.save(os.path.join(SOUNDS_DIR, file.filename))
+        return jsonify({'success': True})
+    return jsonify({'error': 'Invalid file type'}), 400
+
+@app.route('/api/media/sounds/<filename>', methods=['DELETE'])
+def api_media_sounds_delete(filename):
+    path = os.path.join(SOUNDS_DIR, filename)
+    if os.path.exists(path):
+        os.remove(path)
+        return jsonify({'success': True})
+    return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/media/music', methods=['GET'])
+def api_media_music():
+    if not os.path.exists(MEDIA_DIR): return jsonify([])
+    music = []
+    mappings = load_mappings()
+    for d in os.listdir(MEDIA_DIR):
+        dp = os.path.join(MEDIA_DIR, d)
+        if os.path.isdir(dp):
+            tracks = [f for f in os.listdir(dp) if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))]
+            if tracks:
+                info = {'uid': d, 'tracks': tracks, 'title': d}
+                if d in mappings:
+                    info['title'] = mappings[d].get('title', d)
+                    info['artist'] = mappings[d].get('artist', '')
+                music.append(info)
+    return jsonify(music)
+
+@app.route('/api/media/play', methods=['POST'])
+def api_media_play():
+    data = request.json
+    type = data.get('type')
+    path = data.get('path')
+    if type == 'sound':
+        play_sound(path)
+        return jsonify({'success': True})
+    elif type == 'music':
+        # path is expected to be 'uid/track.mp3'
+        full_path = os.path.join(MEDIA_DIR, path)
+        if os.path.exists(full_path):
+            stop_playback()
+            global mpv_process, playback_state
+            mpv_process = subprocess.Popen(
+                ['mpv', '--no-video', f'--input-ipc-server={MPV_SOCKET}', full_path],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            playback_state['paused'] = False
+            return jsonify({'success': True})
+    return jsonify({'error': 'Invalid request'}), 400
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print("🎵 Fonie - RFID Music Player")
@@ -618,6 +764,7 @@ if __name__ == '__main__':
     threading.Thread(target=serial_listener, daemon=True).start()
     threading.Thread(target=pico_listener,   daemon=True).start()
     threading.Thread(target=wifi_monitor_thread, daemon=True).start()
-    print("📡 Serial listeners and Wi-Fi monitor started")
+    threading.Thread(target=button_monitor_thread, daemon=True).start()
+    print("📡 Serial listeners, Wi-Fi monitor, and button monitor started")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5001, debug=False)

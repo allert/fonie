@@ -325,6 +325,11 @@
       grid-template-columns: 320px 1fr;
     }
 
+    .page-full {
+      display: none;
+      grid-column: 1/-1;
+    }
+
     .page-full.active {
       display: block;
     }
@@ -1082,6 +1087,7 @@
 
     <div class="nav-tabs">
       <button class="nav-tab active" onclick="showPage('mappings', this)">Mappings</button>
+      <button class="nav-tab" onclick="showPage('config', this)">Config & Media</button>
       <button class="nav-tab" onclick="showPage('debug', this)">Debug</button>
     </div>
 
@@ -1179,6 +1185,10 @@
               <span class="debug-key">ESP32</span>
               <span class="debug-val"><span class="conn-dot" id="dot-esp32"></span><span id="lbl-esp32">—</span></span>
             </div>
+            <div style="margin-top:16px; text-align:right;">
+               <button class="btn btn-ghost" onclick="testCaptivePortal()" style="padding:4px 8px; font-size:12px;">Force AP Mode</button>
+               <button class="btn btn-ghost" onclick="testPicoLeds()" style="padding:4px 8px; font-size:12px; margin-left:8px;">Test LEDs</button>
+            </div>
           </div>
 
           <div class="debug-card">
@@ -1241,6 +1251,39 @@
       </div>
     </div>
 
+    <!-- Config & Media page -->
+    <div class="page-full" id="page-config" style="padding:32px; overflow-y:auto;">
+      <h2 style="font-size:11px; font-weight:500; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:20px;">System Sounds</h2>
+      <div class="debug-grid" style="margin-bottom:32px;">
+        <div class="debug-card">
+           <div class="debug-row"><span class="debug-key">Shutdown (Hold Play 5s)</span><select id="snd-shutdown" onchange="saveSettings()" style="background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px; font-family:'DM Sans', sans-serif;"><option value="">None</option></select></div>
+           <div class="debug-row"><span class="debug-key">Captive Portal (Hold Play+Prev 5s)</span><select id="snd-captive_portal" onchange="saveSettings()" style="background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px; font-family:'DM Sans', sans-serif;"><option value="">None</option></select></div>
+           <div class="debug-row"><span class="debug-key">Tag Mapped</span><select id="snd-tag_mapped" onchange="saveSettings()" style="background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px; font-family:'DM Sans', sans-serif;"><option value="">None</option></select></div>
+           <div class="debug-row"><span class="debug-key">Tag Unknown</span><select id="snd-tag_unknown" onchange="saveSettings()" style="background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px; font-family:'DM Sans', sans-serif;"><option value="">None</option></select></div>
+        </div>
+      </div>
+      
+      <h2 style="font-size:11px; font-weight:500; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:20px;">Media Library</h2>
+      <div class="debug-grid">
+         <div class="debug-card" style="display:flex; flex-direction:column; max-height:400px; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; position:sticky; top:0; background:var(--surface); z-index:1;">
+               <h3 style="margin:0;">Sounds (/sounds)</h3>
+               <div>
+                 <input type="file" id="soundUpload" style="display:none;" accept=".wav,.mp3" onchange="uploadSound(this)">
+                 <button class="btn btn-ghost" onclick="document.getElementById('soundUpload').click()" style="padding:4px 8px; font-size:12px;">Upload Sound</button>
+               </div>
+            </div>
+            <div id="soundsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+         </div>
+         <div class="debug-card" style="display:flex; flex-direction:column; max-height:400px; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; position:sticky; top:0; background:var(--surface); z-index:1;">
+               <h3 style="margin:0;">Downloaded Music (/media)</h3>
+            </div>
+            <div id="musicList" style="display:flex; flex-direction:column; gap:8px;"></div>
+         </div>
+      </div>
+    </div>
+
   </div>
   <script>
     let selectedResult = null, currentFilter = 'all', activePage = 'mappings';
@@ -1248,13 +1291,15 @@
     let uartEntries = [], uartFilter = 'all', uartOffset = 0, localCleared = false;
 
     function showPage(name, el) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.page, .page-full').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       el.classList.add('active');
       activePage = name;
       if (name === 'debug') {
         pingConnections();
+      } else if (name === 'config') {
+        loadConfigMedia();
       }
     }
 
@@ -1348,6 +1393,15 @@
       document.getElementById('dot-pico').className = 'conn-dot';
       document.getElementById('dot-esp32').className = 'conn-dot';
       try { await fetch('/api/ping', { method: 'POST' }); } catch (e) {}
+    }
+
+    async function testCaptivePortal() {
+      if (!confirm('This will force the ESP32 into Captive Portal mode for testing. Continue?')) return;
+      try { await fetch('/api/test_ap', { method: 'POST' }); } catch (e) {}
+    }
+
+    async function testPicoLeds() {
+      try { await fetch('/api/test_leds', { method: 'POST' }); } catch (e) {}
     }
 
     async function pollDebug() {
@@ -1447,6 +1501,89 @@
         const rb = m.status === 'error' ? `<button class="btn-sm" onclick="retryMapping('${uid}')">Retry</button>` : '';
         return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid">${uid}</div>${pb}<div class="card-actions">${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
+    }
+
+    async function loadConfigMedia() {
+      try {
+        const [sounds, music, settings] = await Promise.all([
+          fetch('/api/media/sounds').then(r => r.json()),
+          fetch('/api/media/music').then(r => r.json()),
+          fetch('/api/settings').then(r => r.json())
+        ]);
+        
+        const slist = document.getElementById('soundsList');
+        if (!sounds.length) slist.innerHTML = '<div class="empty-state" style="padding:20px;">No sounds found</div>';
+        else slist.innerHTML = sounds.map(s => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid var(--border); border-radius:8px;">
+            <span style="font-size:13px;">${s}</span>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-sm" onclick="playMedia('sound', '${s}')">▶ Play</button>
+              <button class="btn-sm danger" onclick="deleteSound('${s}')">Delete</button>
+            </div>
+          </div>
+        `).join('');
+
+        const mlist = document.getElementById('musicList');
+        if (!music.length) mlist.innerHTML = '<div class="empty-state" style="padding:20px;">No downloaded music</div>';
+        else mlist.innerHTML = music.map(m => `
+          <div style="display:flex; flex-direction:column; gap:4px; padding:8px; border:1px solid var(--border); border-radius:8px;">
+            <div style="font-weight:500; font-size:13px;">${m.title}</div>
+            ${m.artist ? `<div style="font-size:11px; color:var(--muted);">${m.artist}</div>` : ''}
+            <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+              ${m.tracks.map(t => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--bg); border-radius:4px; font-size:11px;">
+                  <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t}</span>
+                  <button class="btn-sm" style="padding:2px 6px; flex-shrink:0;" onclick="playMedia('music', '${m.uid}/${t}')">▶ Play</button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
+
+        const sysSounds = settings.system_sounds || {};
+        const selects = ['shutdown', 'captive_portal', 'tag_mapped', 'tag_unknown'];
+        selects.forEach(id => {
+          const sel = document.getElementById('snd-' + id);
+          sel.innerHTML = '<option value="">None / Default</option>' + sounds.map(s => `<option value="${s}" ${sysSounds[id]===s?'selected':''}>${s}</option>`).join('');
+        });
+      } catch (e) { console.error('Failed to load config/media', e); }
+    }
+
+    async function saveSettings() {
+      const system_sounds = {
+        shutdown: document.getElementById('snd-shutdown').value,
+        captive_portal: document.getElementById('snd-captive_portal').value,
+        tag_mapped: document.getElementById('snd-tag_mapped').value,
+        tag_unknown: document.getElementById('snd-tag_unknown').value
+      };
+      await fetch('/api/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system_sounds })
+      });
+    }
+
+    async function playMedia(type, path) {
+      await fetch('/api/media/play', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, path })
+      });
+    }
+
+    async function deleteSound(filename) {
+      if (!confirm(`Delete ${filename}?`)) return;
+      await fetch(`/api/media/sounds/${filename}`, { method: 'DELETE' });
+      loadConfigMedia();
+    }
+
+    async function uploadSound(input) {
+      if (!input.files || !input.files[0]) return;
+      const fd = new FormData();
+      fd.append('file', input.files[0]);
+      input.value = '';
+      try {
+        const r = await fetch('/api/media/sounds/upload', { method: 'POST', body: fd });
+        if ((await r.json()).success) loadConfigMedia();
+      } catch (e) { alert('Upload failed'); }
     }
 
     function setFilter(f, el) {

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fonie Setup</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --glass: rgba(30, 41, 59, 0.7);
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-image: radial-gradient(circle at top right, #1e3a8a 0%, var(--bg) 40%);
+    }
+
+    .container {
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      margin: 20px;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 28px;
+      font-weight: 700;
+      text-align: center;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 32px;
+      font-size: 15px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 14px;
+      background-color: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 16px;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    select {
+      appearance: none;
+      cursor: pointer;
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--text-muted);
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      background-color: var(--border);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    .loader {
+      display: none;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #scan-btn {
+      background-color: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 14px;
+      padding: 8px 12px;
+      margin-top: 8px;
+      width: auto;
+      float: right;
+    }
+
+    #scan-btn:hover {
+      background-color: rgba(255,255,255,0.05);
+    }
+    
+    .clearfix::after {
+      content: "";
+      clear: both;
+      display: table;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .success-screen {
+      text-align: center;
+      padding: 20px 0;
+    }
+    
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+      color: #10b981;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="main-card">
+    <h1>Fonie Setup</h1>
+    <p class="subtitle">Connect your Fonie to a Wi-Fi network</p>
+
+    <div id="setup-form">
+      <div class="form-group clearfix">
+        <label for="ssid">Wi-Fi Network</label>
+        <div class="input-wrapper">
+          <select id="ssid" name="ssid">
+            <option value="" disabled selected>Loading networks...</option>
+          </select>
+          <div class="select-arrow">▼</div>
+        </div>
+        <button type="button" id="scan-btn">↻ Rescan</button>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="password" name="password" placeholder="Leave blank if open network">
+        </div>
+      </div>
+
+      <button id="connect-btn" type="button">
+        <span id="btn-text">Connect</span>
+        <div class="loader" id="btn-loader"></div>
+      </button>
+    </div>
+    
+    <div id="success-screen" class="hidden success-screen">
+      <div class="success-icon">✓</div>
+      <h2>Credentials Sent!</h2>
+      <p style="color: var(--text-muted)">The Fonie is now attempting to connect to the network. You may close this window.</p>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchNetworks();
+
+      document.getElementById('scan-btn').addEventListener('click', () => {
+        const select = document.getElementById('ssid');
+        select.innerHTML = '<option value="" disabled selected>Scanning...</option>';
+        fetchNetworks();
+      });
+
+      document.getElementById('connect-btn').addEventListener('click', () => {
+        const ssid = document.getElementById('ssid').value;
+        const pass = document.getElementById('password').value;
+        
+        if (!ssid) {
+          alert('Please select a network first.');
+          return;
+        }
+        
+        const btn = document.getElementById('connect-btn');
+        const btnText = document.getElementById('btn-text');
+        const btnLoader = document.getElementById('btn-loader');
+        
+        btn.disabled = true;
+        btnText.style.display = 'none';
+        btnLoader.style.display = 'block';
+
+        const formData = new FormData();
+        formData.append('ssid', ssid);
+        formData.append('pass', pass);
+
+        fetch('/save', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          document.getElementById('setup-form').classList.add('hidden');
+          document.getElementById('success-screen').classList.remove('hidden');
+        })
+        .catch(error => {
+          alert('Error sending credentials. Please try again.');
+          btn.disabled = false;
+          btnText.style.display = 'block';
+          btnLoader.style.display = 'none';
+        });
+      });
+    });
+
+    function fetchNetworks() {
+      fetch('/scan')
+        .then(response => response.json())
+        .then(data => {
+          const select = document.getElementById('ssid');
+          select.innerHTML = '';
+          
+          if (data.length === 0) {
+            select.innerHTML = '<option value="" disabled selected>No networks found</option>';
+            return;
+          }
+          
+          // Deduplicate and sort by RSSI
+          const uniqueNetworks = {};
+          data.forEach(net => {
+            if (!uniqueNetworks[net.ssid] || uniqueNetworks[net.ssid].rssi < net.rssi) {
+              uniqueNetworks[net.ssid] = net;
+            }
+          });
+          
+          Object.values(uniqueNetworks)
+            .sort((a, b) => b.rssi - a.rssi)
+            .forEach((net, index) => {
+              const option = document.createElement('option');
+              option.value = net.ssid;
+              let signal = "📶";
+              if (net.rssi < -80) signal = "📉";
+              else if (net.rssi < -60) signal = "📊";
+              
+              option.textContent = `${net.ssid} ${signal} (${net.rssi}dBm)${net.secure ? ' 🔒' : ''}`;
+              if (index === 0) option.selected = true; // Auto-select strongest
+              select.appendChild(option);
+            });
+        })
+        .catch(error => {
+          console.error('Error fetching networks:', error);
+          const select = document.getElementById('ssid');
+          select.innerHTML = '<option value="" disabled selected>Failed to load networks</option>';
+        });
+    }
+  </script>
+</body>
+</html>
