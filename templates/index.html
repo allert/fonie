@@ -233,6 +233,11 @@
       color: var(--text);
     }
 
+    .ctrl-btn.danger-hover:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
     .ctrl-btn.primary {
       width: 44px;
       height: 44px;
@@ -453,6 +458,11 @@
     .btn-sm.danger:hover {
       border-color: var(--danger);
       color: var(--danger);
+    }
+
+    .btn-sm.success:hover {
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     .progress-bar {
@@ -1076,6 +1086,7 @@
       <div class="controls">
         <button class="ctrl-btn" onclick="prevTrack()">&#9664;&#9664;</button>
         <button class="ctrl-btn primary" id="playPauseBtn" onclick="togglePlayPause()">&#9654;</button>
+        <button class="ctrl-btn danger-hover" onclick="stopPlaybackBtn()">&#9632;</button>
         <button class="ctrl-btn" onclick="nextTrack()">&#9654;&#9654;</button>
       </div>
       <div class="volume-group">
@@ -1437,6 +1448,16 @@
     }
     async function nextTrack() { await fetch('/api/playback/next', { method: 'POST' }); }
     async function prevTrack() { await fetch('/api/playback/prev', { method: 'POST' }); }
+    async function stopPlaybackBtn() {
+      await fetch('/api/playback/stop', { method: 'POST' });
+      pollPlayback();
+      pollTag();
+    }
+    async function playMapping(uid) {
+      await fetch(`/api/mappings/play/${uid}`, { method: 'POST' });
+      pollPlayback();
+      pollTag();
+    }
 
     let volumeTimer = null;
     function setVolume(val) {
@@ -1462,7 +1483,7 @@
         const dot = document.getElementById('tagDot'), label = document.getElementById('tagLabel');
         if (t.present) {
           dot.className = 'tag-dot ' + (t.mapped ? 'active' : 'unknown');
-          label.textContent = t.uid;
+          label.textContent = t.uid + (t.virtual ? ' (virtual)' : '');
           const uid = document.getElementById('uidInput');
           if (!uid.value) uid.value = t.uid;
           if (t.mapped && t.title) {
@@ -1499,7 +1520,8 @@
             : m.status === 'error' ? `<div class="status-label error">✗ ${m.error || 'Download failed'}</div>`
               : `<div class="status-label pending">Pending…</div>`;
         const rb = m.status === 'error' ? `<button class="btn-sm" onclick="retryMapping('${uid}')">Retry</button>` : '';
-        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid">${uid}</div>${pb}<div class="card-actions">${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
+        const playBtn = m.status === 'ready' ? `<button class="btn-sm success" onclick="playMapping('${uid}')">Play</button>` : '';
+        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid">${uid}</div>${pb}<div class="card-actions">${playBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
     }
 

@@ -564,6 +564,32 @@ def retry_mapping(uid):
     start_download(uid, mappings[uid])
     return jsonify({'success': True})
 
+@app.route('/api/mappings/play/<uid>', methods=['POST'])
+def play_mapped_song(uid):
+    mappings = load_mappings()
+    if uid not in mappings:
+        return jsonify({'error': 'Mapping not found'}), 404
+    mapping = mappings[uid]
+    if mapping.get('status') != 'ready':
+        return jsonify({'error': 'Media not ready'}), 400
+    
+    global current_tag
+    current_tag = {
+        'present': True,
+        'uid': uid,
+        'timestamp': datetime.now().isoformat(),
+        'mapped': True,
+        'title': mapping.get('title'),
+        'artist': mapping.get('artist'),
+        'color': mapping.get('color'),
+        'virtual': True
+    }
+    
+    send_pico("TAG_ON", mapped=True)
+    play_system_sound('tag_mapped', 'tag_mapped_32.wav')
+    play_mapping(mapping)
+    return jsonify({'success': True})
+
 @app.route('/api/current-tag')
 def api_current_tag():
     return jsonify(current_tag)
@@ -664,6 +690,14 @@ def playback_next():   mpv_next(); return jsonify({'success': True})
 
 @app.route('/api/playback/prev',   methods=['POST'])
 def playback_prev():   mpv_prev(); return jsonify({'success': True})
+
+@app.route('/api/playback/stop',   methods=['POST'])
+def playback_stop():
+    stop_playback()
+    global current_tag
+    current_tag = {'present': False, 'uid': None, 'timestamp': datetime.now().isoformat()}
+    send_pico("TAG_OFF", uid="")
+    return jsonify({'success': True})
 
 @app.route('/api/playback/volume', methods=['POST'])
 def playback_volume():
