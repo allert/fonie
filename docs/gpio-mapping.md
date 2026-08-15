@@ -20,13 +20,13 @@ Source of truth: `firmware/pico/src/main.cpp`
 | GP5 | LED Strip R data | OUT | PIO / WS2812 | **NEW — not yet in firmware.** Speaker R surround |
 | GP6 | INA226 I2C SDA | I/O | Wire1, addr 0x40 | `Wire1.setSDA(6)` |
 | GP7 | INA226 I2C SCL | OUT | Wire1 | `Wire1.setSCL(7)` |
-| GP8 | DS18B20 temp sensor | IN | 1-Wire | **PLANNED.** Battery pack temperature |
+| GP8 | Pi Shutdown Sense | IN | Digital, INPUT_PULLDOWN | Signals Pi shutdown complete (`dtoverlay=gpio-poweroff` from Pi GPIO 22) |
 | GP14 | Pololu OFF | OUT | Digital | **NEW — not yet in firmware.** Drive HIGH to cut power |
 | GP15 | Button: Volume Down | IN | Digital, INPUT_PULLDOWN | HIGH when pressed |
 | GP16 | Onboard RGB LED | OUT | PIO / WS2812 | Single NeoPixel on the RP2040 Zero board |
-| GP26 | Button: Volume Up | IN | Digital, INPUT_PULLDOWN | HIGH when pressed |
+| GP26 | Button: Volume Up | IN | Digital, INPUT_PULLDOWN | HIGH when pressed. Also wired to Pololu pin A → GND |
 | GP27 | Button: Forward/Next | IN | Digital, INPUT_PULLDOWN | HIGH when pressed |
-| GP28 | Button: Play/Pause | IN | Digital, INPUT_PULLDOWN | HIGH when pressed. Also wired to Pololu pin A → GND |
+| GP28 | Button: Play/Pause | IN | Digital, INPUT_PULLDOWN | HIGH when pressed |
 | GP29 | Button: Back/Prev | IN | Digital, INPUT_PULLDOWN | HIGH when pressed |
 
 ### Inaccessible Pins

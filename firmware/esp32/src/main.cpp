@@ -8,11 +8,14 @@
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <ESPmDNS.h>
 
 #define SDA_PIN 3
 #define SCL_PIN 4
 #define RPI_TX  21   // ESP32 TX → Pi RX
 #define RPI_RX  20   // ESP32 RX ← Pi TX
+
+#define FIRMWARE_VERSION "1.1.3"
 
 PN532_I2C pn532_i2c(Wire);
 PN532 nfc(pn532_i2c);
@@ -23,6 +26,7 @@ const unsigned long REMOVAL_TIMEOUT_MS = 1000;
 
 bool inApMode = false;
 bool inStaMode = false;
+bool otaStarted = false;
 bool pn532_connected = false;
 bool tagPresent = false;
 String currentUid = "";
@@ -128,13 +132,13 @@ void startSTA(const char* ssid, const char* pass) {
     inApMode = false;
   }
   Serial.printf("Connecting to Wi-Fi STA: %s\n", ssid);
+  WiFi.disconnect(true);
+  delay(50);
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("fonie-esp32");
   WiFi.begin(ssid, pass);
-  
-  ArduinoOTA.setHostname("fonie-esp32");
-  ArduinoOTA.begin();
   inStaMode = true;
+  otaStarted = false;
 }
 
 void setup() {
@@ -163,18 +167,39 @@ void setup() {
     Serial.println("PN532 ready");
     pn532_connected = true;
   }
-  RpiSerial.println("{\"event\":\"READY\"}");
+  RpiSerial.println("{\"event\":\"READY\",\"version\":\"" FIRMWARE_VERSION "\"}");
   Serial.println("ESP32 ready and listening");
 }
 
-// Global input buffer for UART from Pi
-String inputBuffer = "";
+void handleSerialCommand(const String& cmd) {
+  if (cmd.indexOf("\"event\":\"PING\"") >= 0 || cmd.indexOf("\"event\": \"PING\"") >= 0) {
+    Serial.println("Received PING");
+    RpiSerial.println("{\"event\":\"PONG\",\"version\":\"" FIRMWARE_VERSION "\"}");
+    Serial.println("{\"event\":\"PONG\"}");
+  } 
+  else if (cmd.indexOf("WIFI_AP_START") >= 0) {
+    Serial.println("Received WIFI_AP_START, attempting startAP()...");
+    RpiSerial.println("{\"event\":\"DEBUG\",\"msg\":\"ESP32: Received WIFI_AP_START\"}");
+    startAP();
+    RpiSerial.println("{\"event\":\"DEBUG\",\"msg\":\"ESP32: startAP() finished\"}");
+  }
+  else if (cmd.indexOf("WIFI_CONNECT") >= 0) {
+    Serial.println("Received WIFI_CONNECT");
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, cmd);
+    if (!error) {
+      const char* ssid = doc["ssid"] | "";
+      const char* pass = doc["pass"] | "";
+      startSTA(ssid, pass);
+    } else {
+      Serial.println("Failed to parse WIFI_CONNECT JSON");
+    }
+  }
+}
 
 void loop() {
   static unsigned long lastHeartbeat = 0;
   if (millis() - lastHeartbeat > 5000) {
-    // Uncomment this to verify the board is still running!
-    // Serial.println("ESP32 Heartbeat... Still listening!");
     lastHeartbeat = millis();
   }
 
@@ -183,48 +208,54 @@ void loop() {
     server.handleClient();
   }
   if (inStaMode && WiFi.status() == WL_CONNECTED) {
+    if (!otaStarted) {
+      Serial.print("Wi-Fi connected! IP address: ");
+      Serial.println(WiFi.localIP());
+      if (MDNS.begin("fonie-esp32")) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.println("mDNS responder started: fonie-esp32.local");
+      }
+      ArduinoOTA.setHostname("fonie-esp32");
+      ArduinoOTA.begin();
+      otaStarted = true;
+      
+      RpiSerial.print("{\"event\":\"WIFI_CONNECTED\",\"ip\":\"");
+      RpiSerial.print(WiFi.localIP());
+      RpiSerial.println("\"}");
+    }
+  }
+
+  if (otaStarted) {
     ArduinoOTA.handle();
   }
 
-  // Read UART from Pi (RpiSerial) or USB (Serial) for debugging
-  while (RpiSerial.available() || Serial.available()) {
-    char c;
-    if (Serial.available()) {
-      c = (char)Serial.read();
-    } else {
-      c = (char)RpiSerial.read();
-    }
-
+  // Read UART from Pi (RpiSerial)
+  static String rpiBuffer = "";
+  while (RpiSerial.available()) {
+    char c = (char)RpiSerial.read();
     if (c == '\n') {
-      inputBuffer.trim();
-      if (inputBuffer.length() > 0) {
-        if (inputBuffer.indexOf("\"event\":\"PING\"") >= 0 || inputBuffer.indexOf("\"event\": \"PING\"") >= 0) {
-          Serial.println("Received PING");
-          RpiSerial.println("{\"event\":\"PONG\"}");
-          Serial.println("{\"event\":\"PONG\"}");
-        } 
-        else if (inputBuffer.indexOf("WIFI_AP_START") >= 0) {
-          Serial.println("Received WIFI_AP_START, attempting startAP()...");
-          RpiSerial.println("{\"event\":\"DEBUG\",\"msg\":\"ESP32: Received WIFI_AP_START\"}");
-          startAP();
-          RpiSerial.println("{\"event\":\"DEBUG\",\"msg\":\"ESP32: startAP() finished\"}");
-        }
-        else if (inputBuffer.indexOf("WIFI_CONNECT") >= 0) {
-          Serial.println("Received WIFI_CONNECT");
-          JsonDocument doc;
-          DeserializationError error = deserializeJson(doc, inputBuffer);
-          if (!error) {
-            const char* ssid = doc["ssid"] | "";
-            const char* pass = doc["pass"] | "";
-            startSTA(ssid, pass);
-          } else {
-            Serial.println("Failed to parse WIFI_CONNECT JSON");
-          }
-        }
+      rpiBuffer.trim();
+      if (rpiBuffer.length() > 0) {
+        handleSerialCommand(rpiBuffer);
       }
-      inputBuffer = "";
+      rpiBuffer = "";
     } else {
-      inputBuffer += c;
+      rpiBuffer += c;
+    }
+  }
+
+  // Read USB Serial for debugging
+  static String usbBuffer = "";
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n') {
+      usbBuffer.trim();
+      if (usbBuffer.length() > 0) {
+        handleSerialCommand(usbBuffer);
+      }
+      usbBuffer = "";
+    } else {
+      usbBuffer += c;
     }
   }
 

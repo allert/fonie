@@ -129,7 +129,7 @@ Fonie runs on a custom 3S 18650 battery pack with USB-C PD charging. A Pololu 28
 | VIN | BMS P+ output | 9-12.6V from battery |
 | VOUT | All downstream loads | Switched power rail |
 | GND | Common ground | Shared with all devices |
-| Pin A | Play/Pause button (other leg to GND) | A→GND = on-only operation |
+| Pin A | Volume Up button (other leg to GND) | A→GND = on-only operation |
 | OFF | Pico GP14 | Drive HIGH to force power off |
 
 **Behavior:**
@@ -199,20 +199,20 @@ SoC is reported to the Pi via UART every 30 seconds and immediately on charge st
 ### Power On
 
 1. Unit is off — Pololu latched off, all loads unpowered, ~0.01µA draw
-2. User presses play/pause button
+2. User presses volume up button
 3. Button connects Pololu pin A to GND → Pololu latches ON
 4. VOUT comes up → 5V buck starts → Pi, Pico, ESP32 boot
 5. Pico firmware starts, begins normal operation
 
 ### Soft Shutdown
 
-1. User long-presses play/pause (5 seconds)
-2. Pico detects long press (does NOT trigger normal play/pause action)
+1. User long-presses volume up (3 seconds)
+2. Pico detects long press (does NOT trigger normal volume up action)
 3. Pico sends `{"event":"SHUTDOWN"}` to Pi over UART
 4. Pi executes `sudo shutdown -h now`
 5. Pico runs LED fade-out animation as visual feedback
-6. After 20-second timeout (generous for Pi to complete shutdown) (or can we detect when Pi is fully shut down?)
-7. Pico drives GP14 HIGH → Pololu OFF pin activates → power rail drops
+6. Pi kernel triggers GPIO 22 HIGH via `dtoverlay=gpio-poweroff,gpiopin=22,active_low=0` upon halting
+7. Pico senses GP8 HIGH (or 8s grace period fallback) → drives GP14 HIGH → Pololu OFF pin activates → power rail drops
 8. Everything powers down cleanly. Battery draw returns to 0.01µA.
 
 ### Charging While Off

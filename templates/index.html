@@ -809,6 +809,89 @@
       gap: 6px;
     }
 
+    .color-pill {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .color-pill:hover {
+      transform: scale(1.25);
+    }
+
+    .eq-fader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 12px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .eq-freq {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .eq-subtext {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .eq-slider {
+      width: 100%;
+      margin: 8px 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .eq-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+    }
+
+    .enhancement-toggle {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .enhancement-toggle:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .enhancement-toggle input[type="checkbox"] {
+      margin-top: 3px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .toggle-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .toggle-desc {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
     .btn-circle {
       width: 40px;
       height: 40px;
@@ -1189,16 +1272,42 @@
               <button class="btn btn-ghost" onclick="pingConnections()" style="padding:2px 8px; font-size:1.2em;" title="Refresh connections">&#8635;</button>
             </div>
             <div class="debug-row">
-              <span class="debug-key">Pico</span>
+              <span class="debug-key">Fonie Web App</span>
+              <span class="debug-val" id="lbl-appver">—</span>
+            </div>
+            <div class="debug-row">
+              <span class="debug-key">Pico (RP2040)</span>
               <span class="debug-val"><span class="conn-dot" id="dot-pico"></span><span id="lbl-pico">—</span></span>
             </div>
             <div class="debug-row">
-              <span class="debug-key">ESP32</span>
+              <span class="debug-key">ESP32-C3</span>
               <span class="debug-val"><span class="conn-dot" id="dot-esp32"></span><span id="lbl-esp32">—</span></span>
             </div>
             <div style="margin-top:16px; text-align:right;">
                <button class="btn btn-ghost" onclick="testCaptivePortal()" style="padding:4px 8px; font-size:12px;">Force AP Mode</button>
                <button class="btn btn-ghost" onclick="testPicoLeds()" style="padding:4px 8px; font-size:12px; margin-left:8px;">Test LEDs</button>
+            </div>
+          </div>
+
+          <!-- ESP32 Wi-Fi & OTA Config Card -->
+          <div class="debug-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <h3 style="margin:0;">ESP32 Wi-Fi & OTA Config</h3>
+              <span class="debug-val"><span class="conn-dot" id="dot-esp32-wifi"></span><span id="lbl-esp32-ip">Checking…</span></span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <div>
+                <label style="font-size:11px; color:var(--muted); font-family:'DM Mono', monospace; display:block; margin-bottom:4px;">Wi-Fi Network SSID</label>
+                <input type="text" id="esp32-ssid-input" placeholder="SSID" style="width:100%; padding:8px 12px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:6px; font-family:'DM Sans', sans-serif;">
+              </div>
+              <div>
+                <label style="font-size:11px; color:var(--muted); font-family:'DM Mono', monospace; display:block; margin-bottom:4px;">Wi-Fi Password</label>
+                <input type="password" id="esp32-pass-input" placeholder="Password" style="width:100%; padding:8px 12px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:6px; font-family:'DM Sans', sans-serif;">
+              </div>
+              <div style="display:flex; gap:8px; margin-top:6px;">
+                <button class="btn" onclick="saveAndConnectEsp32Wifi()" id="btn-esp32-connect" style="flex:1; justify-content:center;">⚡ Connect ESP32 Wi-Fi</button>
+              </div>
+              <div id="esp32-wifi-status-msg" style="font-size:12px; color:var(--muted); margin-top:4px;"></div>
             </div>
           </div>
 
@@ -1234,6 +1343,41 @@
             </div>
           </div>
 
+          <!-- LED Unit Test Animations Card -->
+          <div class="debug-card" style="grid-column:1/-1;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+              <h3 style="margin:0;">LED Hardware Unit Test Patterns</h3>
+              <button class="btn btn-ghost" onclick="sendLedTest('off')" style="padding:6px 14px; font-size:13px; color:var(--accent);">🛑 Stop / Resume Normal</button>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:12px;">
+              <button class="btn btn-ghost" onclick="sendLedTest('matrix')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px;">
+                <span style="font-size:22px;">🔲</span>
+                <span>Test Matrix (5x5)</span>
+              </button>
+              <button class="btn btn-ghost" onclick="sendLedTest('ring')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px;">
+                <span style="font-size:22px;">⭕</span>
+                <span>Test Ring (12 LEDs)</span>
+              </button>
+              <button class="btn btn-ghost" onclick="sendLedTest('strip_l')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px;">
+                <span style="font-size:22px;">◀️</span>
+                <span>Test Left Strip</span>
+              </button>
+              <button class="btn btn-ghost" onclick="sendLedTest('strip_r')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px;">
+                <span style="font-size:22px;">▶️</span>
+                <span>Test Right Strip</span>
+              </button>
+              <button class="btn btn-ghost" onclick="sendLedTest('rgb')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px;">
+                <span style="font-size:22px;">💡</span>
+                <span>Test Status RGB</span>
+              </button>
+              <button class="btn btn-ghost" onclick="sendLedTest('all')" style="justify-content:center; padding:14px 16px; font-size:13px; flex-direction:column; gap:6px; border-color:var(--accent); color:var(--accent);">
+                <span style="font-size:22px;">🌈</span>
+                <span>Test All Units</span>
+              </button>
+            </div>
+          </div>
+
         </div>
 
         <!-- UART Monitor -->
@@ -1264,6 +1408,90 @@
 
     <!-- Config & Media page -->
     <div class="page-full" id="page-config" style="padding:32px; overflow-y:auto;">
+      <h2 style="font-size:11px; font-weight:500; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:20px;">Sound Quality & Equalizer</h2>
+      <div class="debug-card" style="margin-bottom:32px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h3 style="margin:0;">5-Band Parametric Equalizer</h3>
+            <span id="eq-preset-badge" style="font-size:11px; font-family:'DM Mono', monospace; background:rgba(0,240,255,0.1); color:var(--accent); border:1px solid var(--accent); padding:2px 8px; border-radius:12px;">FLAT</span>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('flat')">Flat</button>
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('bass_boost')">Bass Boost</button>
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('rock')">Rock</button>
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('jazz')">Jazz</button>
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('vocal')">Vocal</button>
+            <button class="btn btn-ghost eq-preset-btn" onclick="applyEqPreset('loudness')">Loudness</button>
+          </div>
+        </div>
+
+        <!-- 5-Band Slider Faders -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap:12px; margin-bottom:24px; text-align:center;">
+          <div class="eq-fader">
+            <span class="eq-freq">60 Hz</span>
+            <span class="eq-subtext">Sub Bass</span>
+            <input type="range" min="-12" max="12" value="0" id="eq-60" oninput="onEqSliderChange()" class="eq-slider">
+            <span class="eq-val" id="eqv-60">0 dB</span>
+          </div>
+          <div class="eq-fader">
+            <span class="eq-freq">250 Hz</span>
+            <span class="eq-subtext">Bass</span>
+            <input type="range" min="-12" max="12" value="0" id="eq-250" oninput="onEqSliderChange()" class="eq-slider">
+            <span class="eq-val" id="eqv-250">0 dB</span>
+          </div>
+          <div class="eq-fader">
+            <span class="eq-freq">1 kHz</span>
+            <span class="eq-subtext">Mids</span>
+            <input type="range" min="-12" max="12" value="0" id="eq-1000" oninput="onEqSliderChange()" class="eq-slider">
+            <span class="eq-val" id="eqv-1000">0 dB</span>
+          </div>
+          <div class="eq-fader">
+            <span class="eq-freq">4 kHz</span>
+            <span class="eq-subtext">Upper Mids</span>
+            <input type="range" min="-12" max="12" value="0" id="eq-4000" oninput="onEqSliderChange()" class="eq-slider">
+            <span class="eq-val" id="eqv-4000">0 dB</span>
+          </div>
+          <div class="eq-fader">
+            <span class="eq-freq">12 kHz</span>
+            <span class="eq-subtext">Treble</span>
+            <input type="range" min="-12" max="12" value="0" id="eq-12000" oninput="onEqSliderChange()" class="eq-slider">
+            <span class="eq-val" id="eqv-12000">0 dB</span>
+          </div>
+        </div>
+
+        <h4 style="margin:16px 0 12px 0; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px;">Audio Enhancements & Processing</h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+          <label class="enhancement-toggle">
+            <input type="checkbox" id="enh-loudnorm" onchange="onEnhancementChange()">
+            <div>
+              <div class="toggle-title">Loudness Normalization</div>
+              <div class="toggle-desc">EBU R128 volume leveling across tracks</div>
+            </div>
+          </label>
+          <label class="enhancement-toggle">
+            <input type="checkbox" id="enh-dynaudnorm" onchange="onEnhancementChange()">
+            <div>
+              <div class="toggle-title">Dynamic Compressor</div>
+              <div class="toggle-desc">Smooths quiet dialogue & loud music spikes</div>
+            </div>
+          </label>
+          <label class="enhancement-toggle">
+            <input type="checkbox" id="enh-stereowiden" onchange="onEnhancementChange()">
+            <div>
+              <div class="toggle-title">Stereo Widener</div>
+              <div class="toggle-desc">Expands the soundstage for richer audio</div>
+            </div>
+          </label>
+          <label class="enhancement-toggle">
+            <input type="checkbox" id="enh-asubboost" onchange="onEnhancementChange()">
+            <div>
+              <div class="toggle-title">Sub Bass Boost</div>
+              <div class="toggle-desc">Adds punchy low-frequency harmonic bass</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <h2 style="font-size:11px; font-weight:500; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:20px;">System Sounds</h2>
       <div class="debug-grid" style="margin-bottom:32px;">
         <div class="debug-card">
@@ -1311,6 +1539,7 @@
         pingConnections();
       } else if (name === 'config') {
         loadConfigMedia();
+        loadSoundSettings();
       }
     }
 
@@ -1415,6 +1644,137 @@
       try { await fetch('/api/test_leds', { method: 'POST' }); } catch (e) {}
     }
 
+    async function sendLedTest(target) {
+      try {
+        await fetch('/api/debug/led_test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: target })
+        });
+      } catch (e) { console.error('LED test error:', e); }
+    }
+
+    let eqTimer = null;
+
+    async function loadSoundSettings() {
+      try {
+        const d = await (await fetch('/api/sound/settings')).json();
+        const eq = d.eq || {};
+        ['60', '250', '1000', '4000', '12000'].forEach(f => {
+          const val = eq[f] !== undefined ? eq[f] : 0;
+          const el = document.getElementById('eq-' + f);
+          const lbl = document.getElementById('eqv-' + f);
+          if (el) el.value = val;
+          if (lbl) lbl.textContent = (val > 0 ? '+' : '') + val + ' dB';
+        });
+        const enh = d.audio_enhancements || {};
+        ['loudnorm', 'dynaudnorm', 'stereowiden', 'asubboost'].forEach(k => {
+          const el = document.getElementById('enh-' + k);
+          if (el) el.checked = !!enh[k];
+        });
+        const badge = document.getElementById('eq-preset-badge');
+        if (badge) badge.textContent = (d.eq_preset || 'custom').toUpperCase();
+      } catch (e) { }
+    }
+
+    function onEqSliderChange() {
+      ['60', '250', '1000', '4000', '12000'].forEach(f => {
+        const el = document.getElementById('eq-' + f);
+        const lbl = document.getElementById('eqv-' + f);
+        if (el && lbl) {
+          const val = parseInt(el.value);
+          lbl.textContent = (val > 0 ? '+' : '') + val + ' dB';
+        }
+      });
+      const badge = document.getElementById('eq-preset-badge');
+      if (badge) badge.textContent = 'CUSTOM';
+
+      clearTimeout(eqTimer);
+      eqTimer = setTimeout(saveEqSettings, 200);
+    }
+
+    function onEnhancementChange() {
+      saveEqSettings();
+    }
+
+    async function saveEqSettings() {
+      const eq = {};
+      ['60', '250', '1000', '4000', '12000'].forEach(f => {
+        const el = document.getElementById('eq-' + f);
+        if (el) eq[f] = parseInt(el.value);
+      });
+      const enhancements = {};
+      ['loudnorm', 'dynaudnorm', 'stereowiden', 'asubboost'].forEach(k => {
+        const el = document.getElementById('enh-' + k);
+        if (el) enhancements[k] = el.checked;
+      });
+
+      try {
+        await fetch('/api/sound/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eq, enhancements })
+        });
+      } catch (e) { }
+    }
+
+    async function applyEqPreset(presetKey) {
+      try {
+        const res = await (await fetch('/api/sound/preset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preset: presetKey })
+        })).json();
+
+        if (res.status === 'ok') {
+          const eq = res.eq || {};
+          ['60', '250', '1000', '4000', '12000'].forEach(f => {
+            const val = eq[f] !== undefined ? eq[f] : 0;
+            const el = document.getElementById('eq-' + f);
+            const lbl = document.getElementById('eqv-' + f);
+            if (el) el.value = val;
+            if (lbl) lbl.textContent = (val > 0 ? '+' : '') + val + ' dB';
+          });
+          const badge = document.getElementById('eq-preset-badge');
+          if (badge) badge.textContent = presetKey.toUpperCase();
+        }
+      } catch (e) { }
+    }
+
+    async function saveAndConnectEsp32Wifi() {
+      const ssid = document.getElementById('esp32-ssid-input').value.trim();
+      const pass = document.getElementById('esp32-pass-input').value.trim();
+      const msgEl = document.getElementById('esp32-wifi-status-msg');
+      const btn = document.getElementById('btn-esp32-connect');
+      
+      btn.disabled = true;
+      btn.textContent = ' Connecting...';
+      msgEl.textContent = 'Powering up ESP32 PHY and connecting...';
+      msgEl.style.color = 'var(--accent)';
+
+      try {
+        const res = await (await fetch('/api/esp32/connect_wifi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ssid, pass })
+        })).json();
+
+        if (res.status === 'ok' && res.ip) {
+          msgEl.textContent = `Connected! IP: ${res.ip}`;
+          msgEl.style.color = '#00ff66';
+        } else {
+          msgEl.textContent = 'Connection requested. Check UART log.';
+          msgEl.style.color = 'var(--muted)';
+        }
+      } catch (e) {
+        msgEl.textContent = 'Error sending request';
+        msgEl.style.color = '#ff4444';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Connect ESP32 Wi-Fi';
+      }
+    }
+
     async function pollDebug() {
       if (activePage !== 'debug') return;
       try {
@@ -1429,10 +1789,21 @@
         document.getElementById('dbg-current').textContent = b.current !== undefined ? b.current.toFixed(1) + ' mA' : '—';
         document.getElementById('dbg-charging').textContent = b.charging ? '⚡ yes' : 'no';
         updateBattery(b);
+        if (d.app_version) document.getElementById('lbl-appver').textContent = 'v' + d.app_version;
         document.getElementById('dot-pico').className = 'conn-dot' + (d.pico_connected ? ' ok' : '');
         document.getElementById('dot-esp32').className = 'conn-dot' + (d.esp32_connected ? ' ok' : '');
-        document.getElementById('lbl-pico').textContent = d.pico_connected ? 'connected' : 'disconnected';
-        document.getElementById('lbl-esp32').textContent = d.esp32_connected ? 'connected' : 'disconnected';
+        document.getElementById('lbl-pico').textContent = d.pico_connected ? ('connected' + (d.pico_version ? ` (v${d.pico_version})` : '')) : 'disconnected';
+        document.getElementById('lbl-esp32').textContent = d.esp32_connected ? ('connected' + (d.esp32_version ? ` (v${d.esp32_version})` : '')) : 'disconnected';
+        
+        if (d.esp32_wifi) {
+          const w = d.esp32_wifi;
+          document.getElementById('lbl-esp32-ip').textContent = w.ip ? w.ip : (w.connected ? 'Connected' : 'Not Connected');
+          document.getElementById('dot-esp32-wifi').className = 'conn-dot' + (w.ip ? ' ok' : '');
+          if (w.ssid && !document.getElementById('esp32-ssid-input').value) {
+            document.getElementById('esp32-ssid-input').value = w.ssid;
+          }
+        }
+        
         const pb = d.playback, tag = d.tag;
         document.getElementById('dbg-pbstate').textContent = pb.paused ? 'paused' : (tag.present ? 'playing' : 'stopped');
         document.getElementById('dbg-pbvol').textContent = pb.volume + '%';

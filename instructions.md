@@ -170,9 +170,9 @@ upload_port = fonie-esp32.local
 | GP23 | RESERVED (SMPS mode)     | Pico internal                           |
 | GP24 | RESERVED (VBUS sense)    | Pico internal                           |
 | GP25 | RESERVED (Onboard LED)   | Pico internal                           |
-| GP26 | Button: Volume Up        | INPUT_PULLDOWN, HIGH = pressed          |
+| GP26 | Button: Volume Up        | INPUT_PULLDOWN + Pololu A→GND           |
 | GP27 | Button: Forward/Next     | INPUT_PULLDOWN, HIGH = pressed          |
-| GP28 | Button: Play/Pause       | INPUT_PULLDOWN + Pololu A→GND           |
+| GP28 | Button: Play/Pause       | INPUT_PULLDOWN, HIGH = pressed          |
 | GP29 | Button: Back/Prev        | INPUT_PULLDOWN, HIGH = pressed          |
 
 ### SWD Programming Pads (bottom of board)
@@ -904,16 +904,15 @@ pinMode(POLOLU_OFF_PIN, OUTPUT);
 digitalWrite(POLOLU_OFF_PIN, LOW);  // keep power alive
 ```
 
-### 3. Long-Press Shutdown on Play/Pause (GP28)
+### 3. Long-Press Shutdown on Volume Up (GP26)
 
-Detect a 3-second hold on the play/pause button. When triggered:
+Detect a 3-second hold on the volume up button. When triggered:
 
 1. Send `{"event":"SHUTDOWN"}` to Pi over UART
 2. Start a fade-out animation on LEDs (visual feedback that shutdown is in progress)
-3. Wait ~20 seconds for Pi to complete `sudo shutdown -h now`
-4. Drive GP14 (Pololu OFF) HIGH → power rail drops → everything off
-
-This requires tracking press duration separately from the existing debounce logic. The long-press should NOT trigger a normal play/pause action.
+3. Pi executes `sudo shutdown -h now`
+4. Raspberry Pi kernel drives Pi GPIO 22 HIGH via `dtoverlay=gpio-poweroff,gpiopin=22,active_low=0` when Linux halt completes
+5. Pico detects HIGH on GP8 (or 8s grace period fallback) → drives GP14 (Pololu OFF) HIGH → power rail drops → everything off cleanly
 
 ### 4. OTA via UART (future)
 
@@ -928,7 +927,7 @@ The Pololu Mini Pushbutton Power Switch (LV, 2.2–20V, 6A) handles soft power o
 | VIN        | Battery rail (BMS output, 9–12.6V)       |
 | VOUT       | Everything downstream (5V buck, amp, etc) |
 | GND        | Common ground                            |
-| Pin A      | Play/Pause button (other leg to GND)     |
+| Pin A      | Volume Up button (other leg to GND)     |
 | OFF        | Pico GP14                                |
 
 Pin A wired to GND via the button = **on-only** operation. The button can only turn the Pololu on, never off. Pico controls shutdown exclusively via the OFF pin.

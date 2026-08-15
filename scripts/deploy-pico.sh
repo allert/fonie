@@ -2,6 +2,14 @@
 # Compile Pico firmware locally, copy binary and flash tool to Raspberry Pi, and flash the Pico over UART
 
 set -e
+
+# Add PlatformIO Core to PATH if it exists but is not in PATH
+if ! command -v pio &> /dev/null; then
+    if [ -x "$HOME/.platformio/penv/bin/pio" ]; then
+        export PATH="$HOME/.platformio/penv/bin:$PATH"
+    fi
+fi
+
 TARGET="${1:-allert@fonie2.local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

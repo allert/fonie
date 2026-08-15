@@ -26,12 +26,16 @@ MEDIA_DIR     = os.path.expanduser('~/rfid-player/media')
 MAPPINGS_FILE = os.path.expanduser('~/rfid-player/rfid_mappings.json')
 SETTINGS_FILE = os.path.expanduser('~/rfid-player/settings.json')
 SOUNDS_DIR    = os.path.expanduser('~/rfid-player/sounds')
-AUDIO_DEVICE  = 'hw:2,0'
+AUDIO_DEVICE  = 'plughw:2,0'
 MPV_SOCKET    = '/tmp/mpv.sock'
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # ── Global state ──────────────────────────────────────────────────────────────
+APP_VERSION     = '1.1.1'
+pico_version    = None
+esp32_version   = None
+esp32_ip        = None
 esp32_serial    = None
 pico_serial     = None
 pico_is_alive   = False
@@ -60,16 +64,96 @@ def log_uart(direction, source, message):
         'msg': message,
     })
 
+DEFAULT_EQ = {"60": 0, "250": 0, "1000": 0, "4000": 0, "12000": 0}
+DEFAULT_ENHANCEMENTS = {
+    "loudnorm": False,
+    "dynaudnorm": False,
+    "stereowiden": False,
+    "asubboost": False
+}
+
+EQ_PRESETS = {
+    "flat":       {"name": "Flat",       "eq": {"60": 0,  "250": 0,  "1000": 0,  "4000": 0,  "12000": 0}},
+    "bass_boost": {"name": "Bass Boost", "eq": {"60": 8,  "250": 5,  "1000": 0,  "4000": 1,  "12000": 2}},
+    "rock":       {"name": "Rock",       "eq": {"60": 4,  "250": 2,  "1000": -1, "4000": 3,  "12000": 5}},
+    "jazz":       {"name": "Jazz",       "eq": {"60": 3,  "250": 1,  "1000": 2,  "4000": 2,  "12000": 3}},
+    "vocal":      {"name": "Vocal",      "eq": {"60": -2, "250": 1,  "1000": 5,  "4000": 3,  "12000": -1}},
+    "loudness":   {"name": "Loudness",   "eq": {"60": 6,  "250": 2,  "1000": 0,  "4000": 2,  "12000": 4}}
+}
+
+DEFAULT_SYSTEM_SOUNDS = {
+    "startup": "startup.wav",
+    "shutdown": "shutdown.wav",
+    "captive_portal": "",
+    "tag_mapped": "tag_mapped.wav",
+    "tag_unknown": "tag_unmapped.wav"
+}
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 def load_settings():
+    settings = {
+        'brightness': {'ring': 60, 'matrix': 40},
+        'volume': 80,
+        'eq': dict(DEFAULT_EQ),
+        'audio_enhancements': dict(DEFAULT_ENHANCEMENTS),
+        'eq_preset': 'flat',
+        'system_sounds': dict(DEFAULT_SYSTEM_SOUNDS)
+    }
     if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, 'r') as f:
-            return json.load(f)
-    return {'brightness': {'ring': 60, 'matrix': 40}, 'volume': 80}
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                saved = json.load(f)
+                settings.update(saved)
+                if 'eq' not in saved: settings['eq'] = dict(DEFAULT_EQ)
+                if 'audio_enhancements' not in saved: settings['audio_enhancements'] = dict(DEFAULT_ENHANCEMENTS)
+                if 'eq_preset' not in saved: settings['eq_preset'] = 'flat'
+                if 'system_sounds' not in saved: settings['system_sounds'] = dict(DEFAULT_SYSTEM_SOUNDS)
+                else:
+                    for k, v in DEFAULT_SYSTEM_SOUNDS.items():
+                        if k not in settings['system_sounds']:
+                            settings['system_sounds'][k] = v
+        except Exception as e:
+            print(f"⚠️ Error loading settings: {e}")
+    return settings
 
 def save_settings(settings):
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(settings, f, indent=2)
+
+def build_mpv_af_string(settings=None):
+    if settings is None:
+        settings = load_settings()
+    eq = settings.get('eq', DEFAULT_EQ)
+    enh = settings.get('audio_enhancements', DEFAULT_ENHANCEMENTS)
+    filters = []
+
+    # 5-band Equalizer using lavfi peaking equalizer filters
+    bands = [
+        ("60",    60,   1.0),
+        ("250",   250,  1.0),
+        ("1000",  1000, 1.0),
+        ("4000",  4000, 1.0),
+        ("12000", 12000,1.0)
+    ]
+    for key, freq, width in bands:
+        gain = eq.get(key, 0)
+        filters.append(f"equalizer=f={freq}:width_type=o:width={width}:g={gain}")
+
+    if enh.get('asubboost'):
+        filters.append("asubboost")
+    if enh.get('stereowiden'):
+        filters.append("stereowiden")
+    if enh.get('dynaudnorm'):
+        filters.append("dynaudnorm")
+    if enh.get('loudnorm'):
+        filters.append("speechnorm")
+
+    return ",".join(filters)
+
+def mpv_set_audio_filters(af_string=None):
+    if af_string is None:
+        af_string = build_mpv_af_string()
+    return mpv_command({"command": ["set_property", "af", af_string]})
 
 playback_state['volume'] = load_settings().get('volume', 80)
 
@@ -114,44 +198,71 @@ def send_esp32(payload):
     except Exception as e:
         print(f"❌ ESP32 send error: {e}")
 
+pico_lock = threading.Lock()
+
 def send_pico(event, **kwargs):
     global pico_serial
-    if not pico_serial:
-        return
-    payload = json.dumps({"event": event, **kwargs})
-    try:
-        pico_serial.write((payload + '\n').encode())
-        print(f"→ Pico: {payload}")
-        log_uart('→', 'pico', payload)
-        sys.stdout.flush()
-    except Exception as e:
-        print(f"❌ Pico send error: {e}")
+    with pico_lock:
+        if not pico_serial:
+            pico_connect_internal()
+        if not pico_serial:
+            print(f"❌ Cannot send {event}: Pico serial port not connected")
+            return
+        payload = json.dumps({"event": event, **kwargs})
+        try:
+            pico_serial.write((payload + '\n').encode())
+            pico_serial.flush()
+            print(f"→ Pico: {payload}")
+            log_uart('→', 'pico', payload)
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"❌ Pico send error: {e}")
+            pico_serial = None
 
-def pico_connect():
+def pico_connect_internal():
     global pico_serial
     try:
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
         print(f"✅ Pico connected on {PICO_PORT}")
-        send_pico("READY")
+        payload = json.dumps({"event": "READY"})
+        pico_serial.write((payload + '\n').encode())
+        pico_serial.flush()
+        log_uart('→', 'pico', payload)
         b = load_settings().get('brightness', {})
         if b:
-            send_pico("BRIGHTNESS", ring=b.get('ring', 60), matrix=b.get('matrix', 40))
+            payload2 = json.dumps({"event": "BRIGHTNESS", "ring": b.get('ring', 60), "matrix": b.get('matrix', 40)})
+            pico_serial.write((payload2 + '\n').encode())
+            pico_serial.flush()
+            log_uart('→', 'pico', payload2)
     except Exception as e:
         print(f"⚠️  Pico not connected: {e}")
         pico_serial = None
 
+def pico_connect():
+    with pico_lock:
+        pico_connect_internal()
+
 def handle_pico_message(data):
-    global battery_state, button_state, playback_state, pico_is_alive
+    global battery_state, button_state, playback_state, pico_is_alive, pico_version
     event = data.get('event')
 
-    if event == 'PONG':
+    if data.get('version'):
+        pico_version = data.get('version')
+
+    if event:
         pico_is_alive = True
+
+    if event == 'PONG':
+        pass
     elif event == 'BOOTING':
         print("Pico reported BOOTING. Sending READY to handshake.")
         send_pico("READY")
+        play_system_sound('startup')
         b = load_settings().get('brightness', {})
         if b:
             send_pico("BRIGHTNESS", ring=b.get('ring', 60), matrix=b.get('matrix', 40))
+    elif event == 'PING':
+        send_pico("PONG")
     elif event == 'SHUTDOWN':
         print("⚠️  Shutdown requested by Pico (long-press)")
         play_system_sound('shutdown')
@@ -198,24 +309,29 @@ def pico_listener():
     global pico_serial
     while True:
         try:
-            if not pico_serial:
-                pico_connect()
-                threading.Event().wait(5)
-                continue
-            if pico_serial.in_waiting:
-                line = pico_serial.readline().decode('utf-8').strip()
-                if line:
-                    print(f"← Pico: {line}")
-                    log_uart('←', 'pico', line)
-                    try:
-                        handle_pico_message(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
+            line = None
+            with pico_lock:
+                if not pico_serial:
+                    pico_connect_internal()
+                elif pico_serial.in_waiting:
+                    line = pico_serial.readline().decode('utf-8', errors='ignore').strip()
+            
+            if line:
+                print(f"← Pico: {line}")
+                log_uart('←', 'pico', line)
+                try:
+                    handle_pico_message(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+            else:
+                time.sleep(0.05)
         except serial.SerialException:
-            pico_serial = None
-            threading.Event().wait(5)
-        except Exception:
-            threading.Event().wait(1)
+            print("⚠️ Pico serial exception, reconnecting...")
+            with pico_lock:
+                pico_serial = None
+            time.sleep(2)
+        except Exception as e:
+            time.sleep(0.1)
 
 # ── Volume ────────────────────────────────────────────────────────────────────
 def set_system_volume(vol):
@@ -288,8 +404,12 @@ def play_mapping(mapping):
     if not tracks:
         print("❌ No tracks found"); return
     print(f"▶️  Playing {len(tracks)} track(s)")
+    af_str = build_mpv_af_string()
+    mpv_cmd = ['mpv', '--no-video', '--audio-format=s32', f'--input-ipc-server={MPV_SOCKET}']
+    if af_str:
+        mpv_cmd.append(f'--af={af_str}')
     mpv_process = subprocess.Popen(
-        ['mpv', '--no-video', f'--input-ipc-server={MPV_SOCKET}'] + tracks,
+        mpv_cmd + tracks,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     playback_state['paused'] = False
@@ -371,10 +491,15 @@ def serial_listener():
             print(f"❌ Error: {e}"); threading.Event().wait(1)
 
 def handle_esp32_event(event):
-    global active_rfid_tag, current_tag, esp32_is_alive
+    global active_rfid_tag, current_tag, esp32_is_alive, esp32_version, esp32_ip
     event_type = event.get('event')
     uid        = event.get('uid')
-    if event_type == 'PONG':
+    if event.get('version'):
+        esp32_version = event.get('version')
+    if event_type == 'WIFI_CONNECTED':
+        esp32_ip = event.get('ip')
+        print(f"📡 ESP32 reported Wi-Fi connected! IP: {esp32_ip}")
+    elif event_type == 'PONG':
         esp32_is_alive = True
     elif event_type == 'TAG_ON':
         print(f"📱 TAG ON: {uid}")
@@ -415,7 +540,7 @@ def handle_esp32_event(event):
         except Exception as e:
             print(f"❌ nmcli error: {e}")
     elif event_type == 'READY':
-        print("✅ ESP32 ready!"); send_pico("IDLE")
+        print("✅ ESP32 ready!")
 
 # ── Wi-Fi Monitor ─────────────────────────────────────────────────────────────
 wifi_state = {'connected': False, 'ap_started': False, 'sta_started': False}
@@ -427,15 +552,46 @@ def check_wifi_connection():
     except:
         return False
 
-def wifi_monitor_thread():
+def get_pi_wifi_credentials():
+    try:
+        res = subprocess.run(['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'], capture_output=True, text=True)
+        ssid = None
+        for line in res.stdout.splitlines():
+            if line.startswith('yes:'):
+                ssid = line.split(':', 1)[1]
+                break
+        if not ssid:
+            return None, None
+        
+        res_conn = subprocess.run(['nmcli', '-t', '-f', 'active,NAME', 'connection', 'show'], capture_output=True, text=True)
+        conn_name = None
+        for line in res_conn.stdout.splitlines():
+            if line.startswith('yes:'):
+                conn_name = line.split(':', 1)[1]
+                break
+        if not conn_name:
+            conn_name = 'preconfigured'
+
+        res_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', conn_name], capture_output=True, text=True)
+        password = res_psk.stdout.strip()
+        if not password:
+            res_psk2 = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', 'preconfigured'], capture_output=True, text=True)
+            password = res_psk2.stdout.strip()
+        return ssid, password
+    except Exception as e:
+        print(f"Error extracting Wi-Fi credentials: {e}")
+        return None, None
+
+def wifi_sync_thread():
     global wifi_state
     while True:
-        is_connected = check_wifi_connection()
-        if is_connected:
+        if check_wifi_connection():
             if not wifi_state['sta_started']:
                 settings = load_settings()
                 ssid = settings.get('wifi_ssid', '')
                 password = settings.get('wifi_pass', '')
+                if not ssid:
+                    ssid, password = get_pi_wifi_credentials()
                 if ssid:
                     send_esp32({"event": "WIFI_CONNECT", "ssid": ssid, "pass": password})
                     wifi_state['sta_started'] = True
@@ -622,17 +778,117 @@ def api_brightness_set():
     send_pico("BRIGHTNESS", ring=b['ring'], matrix=b['matrix'])
     return jsonify({'success': True, 'brightness': b})
 
+@app.route('/api/esp32/connect_wifi', methods=['POST'])
+def api_esp32_connect_wifi():
+    global esp32_ip
+    esp32_ip = None
+    data = request.json or {}
+    settings = load_settings()
+    ssid = data.get('ssid') or settings.get('wifi_ssid', '')
+    password = data.get('pass') or settings.get('wifi_pass', '')
+    if data.get('ssid'):
+        settings['wifi_ssid'] = data['ssid']
+        if data.get('pass'):
+            settings['wifi_pass'] = data['pass']
+        save_settings(settings)
+
+    if not ssid or not password:
+        ssid_pi, pass_pi = get_pi_wifi_credentials()
+        ssid = ssid or ssid_pi
+        password = password or pass_pi
+    if ssid and password:
+        print(f"📡 Powering up ESP32 Wi-Fi PHY and connecting to: {ssid}", flush=True)
+        send_esp32({"event": "WIFI_AP_START"})
+        time.sleep(0.5)
+        send_esp32({"event": "WIFI_CONNECT", "ssid": ssid, "pass": password})
+        for _ in range(20): # Wait up to 10s for ESP32 to report IP
+            time.sleep(0.5)
+            if esp32_ip:
+                print(f"✅ ESP32 connected to Wi-Fi! IP: {esp32_ip}", flush=True)
+                return jsonify({'status': 'ok', 'ssid': ssid, 'ip': esp32_ip})
+        return jsonify({'status': 'ok', 'ssid': ssid, 'ip': None})
+    return jsonify({'status': 'error', 'message': 'No active Wi-Fi connection found on Pi'}), 400
+
+@app.route('/api/sound/settings', methods=['GET', 'POST'])
+def api_sound_settings():
+    settings = load_settings()
+    if request.method == 'POST':
+        data = request.json or {}
+        if 'eq' in data and isinstance(data['eq'], dict):
+            for k, v in data['eq'].items():
+                try: settings['eq'][str(k)] = max(-12, min(12, int(v)))
+                except (ValueError, TypeError): pass
+            settings['eq_preset'] = 'custom'
+        if 'enhancements' in data and isinstance(data['enhancements'], dict):
+            for k, v in data['enhancements'].items():
+                settings['audio_enhancements'][str(k)] = bool(v)
+        save_settings(settings)
+        af_str = build_mpv_af_string(settings)
+        mpv_set_audio_filters(af_str)
+        return jsonify({
+            'status': 'ok',
+            'eq': settings['eq'],
+            'audio_enhancements': settings['audio_enhancements'],
+            'eq_preset': settings.get('eq_preset', 'custom'),
+            'af_string': af_str
+        })
+    
+    return jsonify({
+        'eq': settings.get('eq', DEFAULT_EQ),
+        'audio_enhancements': settings.get('audio_enhancements', DEFAULT_ENHANCEMENTS),
+        'eq_preset': settings.get('eq_preset', 'flat'),
+        'presets': {k: v['name'] for k, v in EQ_PRESETS.items()}
+    })
+
+@app.route('/api/sound/preset', methods=['POST'])
+def api_sound_preset():
+    data = request.json or {}
+    preset_key = str(data.get('preset', 'flat'))
+    if preset_key not in EQ_PRESETS:
+        return jsonify({'status': 'error', 'message': f'Unknown preset: {preset_key}'}), 400
+    
+    settings = load_settings()
+    settings['eq'] = dict(EQ_PRESETS[preset_key]['eq'])
+    settings['eq_preset'] = preset_key
+    save_settings(settings)
+    
+    af_str = build_mpv_af_string(settings)
+    mpv_set_audio_filters(af_str)
+    return jsonify({
+        'status': 'ok',
+        'preset': preset_key,
+        'eq': settings['eq'],
+        'audio_enhancements': settings.get('audio_enhancements', DEFAULT_ENHANCEMENTS),
+        'af_string': af_str
+    })
+
 @app.route('/api/debug')
 def api_debug():
+    settings = load_settings()
     return jsonify({
+        'app_version':     APP_VERSION,
+        'pico_version':    pico_version,
+        'esp32_version':   esp32_version,
         'buttons':         button_state,
         'battery':         battery_state,
         'playback':        playback_state,
         'tag':             current_tag,
-        'brightness':      load_settings().get('brightness', {}),
+        'brightness':      settings.get('brightness', {}),
         'pico_connected':  pico_is_alive,
         'esp32_connected': esp32_is_alive,
+        'esp32_wifi': {
+            'ip':          esp32_ip,
+            'ssid':        settings.get('wifi_ssid', ''),
+            'connected':   (esp32_ip is not None)
+        }
     })
+
+@app.route('/api/debug/led_test', methods=['POST'])
+def api_debug_led_test():
+    data   = request.json or {}
+    target = str(data.get('target', 'off'))
+    send_pico("LED_TEST", target=target)
+    return jsonify({"status": "ok", "target": target})
 
 @app.route('/api/ping', methods=['POST'])
 def api_ping():
@@ -797,7 +1053,7 @@ if __name__ == '__main__':
     pico_connect()
     threading.Thread(target=serial_listener, daemon=True).start()
     threading.Thread(target=pico_listener,   daemon=True).start()
-    threading.Thread(target=wifi_monitor_thread, daemon=True).start()
+    threading.Thread(target=wifi_sync_thread, daemon=True).start()
     threading.Thread(target=button_monitor_thread, daemon=True).start()
     print("📡 Serial listeners, Wi-Fi monitor, and button monitor started")
     print("=" * 50)

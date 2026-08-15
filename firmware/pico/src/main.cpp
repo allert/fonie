@@ -27,20 +27,23 @@
 #define INA226_REG_BUS       0x02
 #define INA226_REG_CALIB     0x05
 
-// Shunt resistor value (R100 = 100mΩ = 0.1Ω)
+// Shunt resistor value (R002 = 2mΩ = 0.002Ω)
 #define SHUNT_OHMS        0.002f
 // Pack capacity in mAh (3 x 2900mAh in series)
 #define PACK_CAPACITY_MAH 2900.0f
-// Current sense LSB with R100 shunt: 2.5uV / 0.1Ω = 25uA per LSB
-#define CURRENT_LSB_MA    0.1f     // mA per LSB (after calibration)
-// Bus voltage LSB is always 1.25mV
-#define BUS_VOLTAGE_LSB   0.00125f // V per LSB
+// Current sense LSB with R002 shunt: 2.5uV / 0.002Ω = 1.25mA per LSB
+#define CURRENT_LSB_MA    1.25f
+// Bus voltage LSB is 1.25mV; calibrated scale factor matches physical multimeter reading (12.70V / 12.233V)
+#define BUS_VOLTAGE_LSB      0.00125f // V per LSB
+#define VOLTAGE_CALIB_SCALE  1.038168f // Calibrates VBUS pin reading to multimeter 12.70V
 
 // 3S pack voltage thresholds
-#define PACK_FULL_V       12.6f
-#define PACK_EMPTY_V       9.0f   // 3.0V per cell
-#define PACK_REST_I_MA    50.0f   // below this = at rest (no significant load/charge)
-#define CHARGE_TAPER_MA   150.0f  // CV phase taper threshold → set SoC = 100%
+#define PACK_FULL_V          12.60f   // Standard 3S Li-ion full voltage (4.20V/cell)
+#define PACK_EMPTY_V          9.00f   // 3.0V per cell
+#define PACK_REST_I_MA       50.00f   // below this = at rest (no significant load/charge)
+#define CHARGE_TAPER_MA      150.00f  // CV phase taper threshold → set SoC = 100%
+
+#define FIRMWARE_VERSION "1.1.7"
 
 // Buttons (INPUT_PULLDOWN, HIGH when pressed)
 #define BTN_PREV    29
@@ -48,6 +51,8 @@
 #define BTN_NEXT    27
 #define BTN_VOLUP   26
 #define BTN_VOLDOWN 15
+
+#define PI_SHUTDOWN_SENSE_PIN 8
 
 #define DEBOUNCE_MS  50
 #define VOL_STEP      5
@@ -61,14 +66,21 @@ Adafruit_NeoPixel stripL(STRIP_LEDS, STRIPL_PIN, NEO_GRBW + NEO_KHZ800);
 Adafruit_NeoPixel stripR(STRIP_LEDS, STRIPR_PIN, NEO_GRBW + NEO_KHZ800);
 
 // ── State machine ─────────────────────────────────────────────────────────────
-enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN };
+enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN, S_LED_TEST, S_IDLE };
 State currentState   = S_BOOTING;
 State preVolumeState = S_OFF;
 
-// Play button long-press tracking
-unsigned long playPressStart = 0;
-bool playHeld = false;
+// Vol Up button long-press tracking (for Pololu soft switch OFF trigger)
+unsigned long volUpPressStart = 0;
+bool volUpHeld = false;
 bool shutdownInitiated = false;
+
+// Pi shutdown polling state
+unsigned long lastPiPingSent = 0;
+unsigned long lastPiResponseTime = 0;
+bool piNoResponseDetected = false;
+unsigned long noResponseStartTime = 0;
+bool ledsCleared = false;
 
 unsigned long stateStart = 0;
 unsigned long lastFrame  = 0;
@@ -161,7 +173,7 @@ bool ina226_scan() {
 // Returns bus voltage in volts
 float ina226_voltage() {
   uint16_t raw = ina226_readReg(INA226_REG_BUS);
-  return raw * BUS_VOLTAGE_LSB;
+  return (raw * BUS_VOLTAGE_LSB) * VOLTAGE_CALIB_SCALE;
 }
 
 // Returns current in mA (positive = discharging, negative = charging)
@@ -187,19 +199,43 @@ static const float OCV_V[11] = {
   11.55f,  // 70%
   11.76f,  // 80%
   12.06f,  // 90%
-  12.60f,  // 100%
+  12.60f,  // 100% (4.20V per cell)
 };
 
 float voltageToSoC(float v) {
-  if (v <= OCV_V[0])  return 0.0f;
-  if (v >= OCV_V[10]) return 100.0f;
+  // Deduct internal resistance voltage drop during charging (I * 0.10 ohm)
+  float v_ocv = isCharging ? (v - (abs(packCurrentMA) / 1000.0f) * 0.10f) : v;
+  if (v_ocv <= OCV_V[0])  return 0.0f;
+  if (v_ocv >= OCV_V[10]) return 100.0f;
   for (int i = 0; i < 10; i++) {
-    if (v <= OCV_V[i + 1]) {
-      float t = (v - OCV_V[i]) / (OCV_V[i + 1] - OCV_V[i]);
+    if (v_ocv <= OCV_V[i + 1]) {
+      float t = (v_ocv - OCV_V[i]) / (OCV_V[i + 1] - OCV_V[i]);
       return (i + t) * 10.0f;
     }
   }
   return 100.0f;
+}
+
+// ── SoC persistence (LittleFS) ────────────────────────────────────────────────
+static float lastSavedSoC = -1.0f;
+
+void saveSoC() {
+  if (abs(socPercent - lastSavedSoC) >= 1.0f) {
+    lastSavedSoC = socPercent;
+    File f = LittleFS.open("/soc.json", "w");
+    if (f) {
+      f.printf("{\"soc\":%.1f}", socPercent);
+      f.close();
+    }
+  }
+}
+
+void loadSoC() {
+  packVoltage = ina226_voltage();
+  socPercent  = voltageToSoC(packVoltage);
+  lastSavedSoC = socPercent;
+  socValid    = true;
+  Serial.printf("Initial SoC from calibrated voltage: %.1f%%\n", socPercent);
 }
 
 // ── SoC update (coulomb counting + correction) ────────────────────────────────
@@ -226,8 +262,8 @@ void updateSoC() {
   float deltaSoC = (-packCurrentMA * dt_h / PACK_CAPACITY_MAH) * 100.0f;
   socPercent = constrain(socPercent + deltaSoC, 0.0f, 100.0f);
 
-  // Rest state detection
-  if (abs(packCurrentMA) < PACK_REST_I_MA) {
+  // Rest state detection (ONLY when not charging)
+  if (!isCharging && abs(packCurrentMA) < PACK_REST_I_MA) {
     if (!atRest) { atRest = true; lastRestStart = now; }
     // Correct from voltage after 30s at rest
     if (now - lastRestStart > 30000) {
@@ -242,17 +278,19 @@ void updateSoC() {
     lastRestStart = now;
   }
 
-  // Full charge anchor: CV phase detected (high voltage + tapering current)
-  if (packVoltage >= PACK_FULL_V - 0.1f && isCharging &&
-      abs(packCurrentMA) < CHARGE_TAPER_MA) {
+  // Full charge anchor: High voltage (>=12.45V) + tapering/low current
+  if (packVoltage >= 12.45f && abs(packCurrentMA) < CHARGE_TAPER_MA) {
     socPercent = 100.0f;
-    Serial.println("CV taper detected -> SoC = 100%");
+    Serial.println("Full charge / CV taper detected -> SoC = 100%");
   }
 
   // Empty anchor
   if (packVoltage <= PACK_EMPTY_V + 0.1f && !isCharging) {
     socPercent = 0.0f;
   }
+
+  // Save to LittleFS if changed
+  saveSoC();
 
   // Report to Pi periodically
   if (now - lastSoCReport >= SOC_REPORT_INTERVAL_MS || !socValid) {
@@ -264,6 +302,7 @@ void updateSoC() {
 void reportSoC() {
   lastSoCReport = millis();
   String msg = "{\"event\":\"SOC\""
+               ",\"version\":\"" FIRMWARE_VERSION "\""
                ",\"level\":"    + String((int)socPercent) +
                ",\"voltage\":"  + String(packVoltage, 3) +
                ",\"current\":"  + String(packCurrentMA, 1) +
@@ -302,7 +341,7 @@ void drawDigit(int d, int startX, int startY, uint8_t r, uint8_t g, uint8_t b) {
 void drawSoC(int soc) {
   matrixClear();
   uint8_t r, g, b = 0;
-  if (isCharging)    { r = 0;   g = 100; b = 200; }
+  if (isCharging)    { r = 0;   g = 200; b = 255; }
   else if (soc > 50) { r = 0;   g = 255; b = 0;   }
   else if (soc > 20) { r = 255; g = 180; b = 0;   }
   else               { r = 255; g = 0;   b = 0;   }
@@ -316,20 +355,31 @@ void drawSoC(int soc) {
     drawDigit(soc / 10, 1, 1, r, g, b);
     drawDigit(soc % 10, 5, 1, r, g, b);
   }
+
   matrixSet(7, 5, r, g, b);
   matrixSet(6, 6, r, g, b);
-  matrixSet(7, 7, r, g, b);
+  if (isCharging) {
+    float p = (sin(millis() * 0.006f) + 1.0f) * 0.5f;
+    matrixSet(7, 7, 0, (uint8_t)(255 * p), (uint8_t)(100 * p));
+  } else {
+    matrixSet(7, 7, r, g, b);
+  }
   matrix.show();
 
   int litLeds = (soc * RING_LEDS) / 100;
   ring.clear();
+  float ringBreath = (sin(millis() * 0.004f) + 1.0f) * 0.5f;
   for (int i = 0; i < litLeds; i++) {
-    float t    = (float)i / RING_LEDS;
+    float t = (float)i / RING_LEDS;
     uint8_t lr, lg, lb = 0;
-    if (isCharging) { lr = 0; lg = 100; lb = (uint8_t)(200 * t); }
-    else {
-      lr = t < 0.5 ? (uint8_t)(t * 2 * 80) : 255;
-      lg = t < 0.5 ? 255 : (uint8_t)(255 - ((t - 0.5) * 2 * 255));
+    if (isCharging) {
+      float pulse = 0.6f + 0.4f * ringBreath;
+      lr = 0;
+      lg = (uint8_t)(180 * pulse);
+      lb = (uint8_t)(255 * pulse * t);
+    } else {
+      lr = t < 0.5f ? (uint8_t)(t * 2 * 80) : 255;
+      lg = t < 0.5f ? 255 : (uint8_t)(255 - ((t - 0.5f) * 2 * 255));
     }
     ring.setPixelColor(i, ring.Color(lr, lg, lb));
   }
@@ -394,6 +444,38 @@ void drawMatrixSolid(uint8_t r, uint8_t g, uint8_t b) {
   matrix.show();
 }
 
+void drawMatrixSpin(float angle, uint8_t r, uint8_t g, uint8_t b) {
+  matrixClear();
+  for (int x = 0; x < 8; x++) {
+    for (int y = 0; y < 8; y++) {
+      float dx = x - 3.5f;
+      float dy = y - 3.5f;
+      float dist = sqrt(dx*dx + dy*dy);
+      if (dist > 4.2f) continue;
+      float a = atan2(dy, dx);
+      float diff = a - angle;
+      while (diff < 0) diff += 2.0f * M_PI;
+      while (diff >= 2.0f * M_PI) diff -= 2.0f * M_PI;
+      float norm = diff / (2.0f * M_PI);
+      float tail = pow(1.0f - norm, 2.5f);
+      matrixSet(x, y, (uint8_t)(r * tail), (uint8_t)(g * tail), (uint8_t)(b * tail));
+    }
+  }
+  matrix.show();
+}
+
+void drawRingSpin(float angle, uint8_t r, uint8_t g, uint8_t b) {
+  ring.clear();
+  int lead = (int)((angle / (2.0f * M_PI)) * RING_LEDS) % RING_LEDS;
+  if (lead < 0) lead += RING_LEDS;
+  for (int i = 0; i < 8; i++) {
+    int idx = (lead - i + RING_LEDS) % RING_LEDS;
+    float fade = pow(1.0f - ((float)i / 8.0f), 2.0f);
+    ring.setPixelColor(idx, ring.Color((uint8_t)(r * fade), (uint8_t)(g * fade), (uint8_t)(b * fade)));
+  }
+  ring.show();
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 void setRGB(uint8_t r, uint8_t g, uint8_t b) {
   rgb.setPixelColor(0, rgb.Color(r, g, b)); rgb.show();
@@ -414,6 +496,13 @@ void setState(State s) {
   if (s == S_TAG_OFF_FADE) fadeVal   = 1.0;
   if (s == S_PLAYING)      { spinPos = 0; breathVal = 1.0; breathDir = -1; waveOffset = 0; }
   if (s == S_PAUSED)       { breathVal = 1.0; breathDir = -1; }
+  if (s == S_SHUTDOWN) {
+    lastPiPingSent = 0;
+    lastPiResponseTime = millis();
+    piNoResponseDetected = false;
+    noResponseStartTime = 0;
+    ledsCleared = false;
+  }
 }
 
 void overlaySoC() {
@@ -422,28 +511,68 @@ void overlaySoC() {
 }
 
 void frameShutdown() {
-  unsigned long elapsed = millis() - stateStart;
+  unsigned long now = millis();
+  unsigned long elapsed = now - stateStart;
 
-  if (elapsed < 3000) {
-    // Fade all LEDs from current brightness to zero over 3 seconds
-    float fade = 1.0f - ((float)elapsed / 3000.0f);
-    ring.fill(ring.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade)));
-    ring.show();
-    drawMatrixSolid((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade));
-    
-    // Speaker strips fade
-    stripL.fill(stripL.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade), 0));
-    stripR.fill(stripR.Color((uint8_t)(animR * fade), (uint8_t)(animG * fade), (uint8_t)(animB * fade), 0));
-    stripL.show(); stripR.show();
-    
-    setRGB((uint8_t)(animR * fade * 0.2f), (uint8_t)(animG * fade * 0.2f), (uint8_t)(animB * fade * 0.2f));
-  } else if (elapsed < 3200) {
-    // LEDs off, conserve power during Pi shutdown
+  // Print shutdown countdown status every second to USB Serial
+  static unsigned long lastPrint = 0;
+  if (now - lastPrint >= 1000) {
+    lastPrint = now;
+    Serial.print("Pico: Shutdown state active. Elapsed: ");
+    Serial.print(elapsed / 1000);
+    Serial.println("s");
+  }
+
+  // 1. LED Feedback: Radar spinner animation while Pi shuts down
+  float angle = (float)(now % 1200) / 1200.0f * 2.0f * M_PI;
+  drawMatrixSpin(angle, 255, 60, 0); // Warm amber spinning radar
+  drawRingSpin(angle, 255, 60, 0);
+  stripL.clear(); stripR.clear(); stripL.show(); stripR.show();
+  setRGB(25, 6, 0);
+
+  // 2. Pi Polling logic
+  if (!piNoResponseDetected) {
+    // Send PING every 500ms
+    if (now - lastPiPingSent >= 500) {
+      lastPiPingSent = now;
+      Serial1.println("{\"event\":\"PING\"}");
+    }
+
+    // Check if the Pi has stopped responding (timeout: 3000ms)
+    if (now - lastPiResponseTime > 3000) {
+      piNoResponseDetected = true;
+      noResponseStartTime = now;
+      Serial.println("Pico: Pi stopped responding. Initiating grace period...");
+    }
+  }
+
+  // 3. Power Cut Decision
+  bool cutPower = false;
+  
+  // Hardware signal from Pi gpio-poweroff overlay (Pi GPIO 16 -> Pico GP8)
+  // (Guard with elapsed >= 500ms so the spinner animation is visibly rendered while Pi halts)
+  if (elapsed >= 500 && digitalRead(PI_SHUTDOWN_SENSE_PIN) == HIGH) {
+    Serial.println("Pico: Hardware gpio-poweroff signal received from Pi. Cutting power immediately!");
+    cutPower = true;
+  }
+
+  // Fallback UART polling grace period (8 seconds)
+  if (piNoResponseDetected && (now - noResponseStartTime >= 8000)) {
+    Serial.println("Pico: Grace period finished (8s). Cutting power.");
+    cutPower = true;
+  }
+  
+  // Hard safety timeout of 30 seconds
+  if (elapsed >= 30000) {
+    Serial.println("Pico: Hard safety timeout reached. Cutting power.");
+    cutPower = true;
+  }
+
+  if (cutPower) {
     allOff();
-  } else if (elapsed >= 20000) {
-    // Pi has had enough time to shut down cleanly. Cut power rails!
+    Serial.println("💥 [Pico] DRIVING POLOLU_OFF_PIN (GP14) HIGH - CUTTING POWER RAILS!");
+    Serial1.println("💥 [Pico] DRIVING POLOLU_OFF_PIN (GP14) HIGH - CUTTING POWER RAILS!");
     digitalWrite(POLOLU_OFF_PIN, HIGH);
-    // Never reach past this line
     while (1) {
       delay(10);
     }
@@ -666,10 +795,96 @@ String extractValue(const String& json, const String& key) {
   }
 }
 
+String testTarget = "off";
+
+void onLedTest(const String& target) {
+  testTarget = target;
+  if (target == "off" || target == "clear") {
+    allOff();
+    setState(S_IDLE);
+    return;
+  }
+
+  // Set all NeoPixel strands to 100% brightness for hardware testing
+  ring.setBrightness(255);
+  matrix.setBrightness(255);
+  stripL.setBrightness(255);
+  stripR.setBrightness(255);
+
+  allOff();
+  setState(S_LED_TEST);
+}
+
+void frameLedTest() {
+  unsigned long now = millis();
+  unsigned long elapsed = now - stateStart;
+  float angle = (float)(now % 1000) / 1000.0f * 2.0f * M_PI;
+
+  if (testTarget == "matrix") {
+    drawMatrixSpin(angle, 0, 240, 255);
+    ring.clear(); ring.show();
+    stripL.clear(); stripL.show();
+    stripR.clear(); stripR.show();
+    setRGB(0, 0, 0);
+  } 
+  else if (testTarget == "ring") {
+    matrixClear(); matrix.show();
+    // High-visibility spinning pulse on the Ring (supports both RGB and RGBW hardware)
+    uint8_t pulse = (uint8_t)(128 + 127 * sin(now * 0.006f));
+    ring.fill(ring.Color(255, pulse, 0));
+    drawRingSpin(angle, 0, 255, 255);
+    stripL.clear(); stripL.show();
+    stripR.clear(); stripR.show();
+    setRGB(0, 0, 0);
+  } 
+  else if (testTarget == "strip_l") {
+    matrixClear(); matrix.show();
+    ring.clear(); ring.show();
+    stripL.fill(stripL.Color(0, 255, 150, 150)); stripL.show();
+    stripR.clear(); stripR.show();
+    setRGB(0, 0, 0);
+  } 
+  else if (testTarget == "strip_r") {
+    matrixClear(); matrix.show();
+    ring.clear(); ring.show();
+    stripL.clear(); stripL.show();
+    stripR.fill(stripR.Color(255, 150, 0, 150)); stripR.show();
+    setRGB(0, 0, 0);
+  } 
+  else if (testTarget == "rgb") {
+    matrixClear(); matrix.show();
+    ring.clear(); ring.show();
+    stripL.clear(); stripL.show();
+    stripR.clear(); stripR.show();
+    uint8_t step = (elapsed / 300) % 4;
+    if (step == 0)      setRGB(255, 0, 0);
+    else if (step == 1) setRGB(0, 255, 0);
+    else if (step == 2) setRGB(0, 0, 255);
+    else if (step == 3) setRGB(255, 255, 255);
+  } 
+  else if (testTarget == "all") {
+    drawMatrixSpin(angle, 0, 240, 255);
+    uint8_t pulse = (uint8_t)(128 + 127 * sin(now * 0.006f));
+    ring.fill(ring.Color(255, pulse, 0));
+    drawRingSpin(angle, 0, 255, 255);
+    stripL.fill(stripL.Color(0, 255, 150, 150)); stripL.show();
+    stripR.fill(stripR.Color(255, 150, 0, 150)); stripR.show();
+    setRGB(255, 255, 255);
+  }
+}
+
 void handleEvent(const String& line) {
   Serial.print("Pi: "); Serial.println(line);
   String event = extractValue(line, "event");
-  if      (event == "PING")     Serial1.println("{\"event\":\"PONG\"}");
+  if      (event == "PING")     Serial1.println("{\"event\":\"PONG\",\"version\":\"" FIRMWARE_VERSION "\"}");
+  else if (event == "PONG") {
+    lastPiResponseTime = millis();
+    Serial.println("Pico: received PONG from Pi.");
+  }
+  else if (event == "LED_TEST") {
+    String target = extractValue(line, "target");
+    onLedTest(target);
+  }
   else if (event == "READY" || event == "IDLE") onReady();
   else if (event == "PING") { Serial1.println("{\"event\":\"PONG\"}"); Serial.println("{\"event\":\"PONG\"}"); }
   else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true");
@@ -801,15 +1016,15 @@ void pollButtons() {
     if ((now - buttons[i].lastChange) >= DEBOUNCE_MS && raw != buttons[i].state) {
       buttons[i].state = raw;
       
-      if (strcmp(buttons[i].name, "play") == 0) {
-        // Special Play button active-low/long-press handling
+      if (strcmp(buttons[i].name, "vol_up") == 0) {
+        // Special Vol Up button active-low/long-press handling
         sendButtonEvent(buttons[i].name, raw);
         if (raw) {
-          playPressStart = now;
-          playHeld = true;
+          volUpPressStart = now;
+          volUpHeld = true;
           shutdownInitiated = false;
         } else {
-          playHeld = false;
+          volUpHeld = false;
           if (!shutdownInitiated) {
             handleButtonPress(buttons[i].name);
           }
@@ -823,11 +1038,11 @@ void pollButtons() {
     }
   }
 
-  // Monitor Play long-press outside debounce loop
-  if (playHeld && !shutdownInitiated) {
-    if (now - playPressStart >= 3000) {
+  // Monitor Vol Up long-press outside debounce loop
+  if (volUpHeld && !shutdownInitiated) {
+    if (now - volUpPressStart >= 3000) {
       shutdownInitiated = true;
-      Serial.println("Play button long-press detected! Sending SHUTDOWN to Pi.");
+      Serial.println("Volume Up button long-press detected! Sending SHUTDOWN to Pi.");
       Serial1.println("{\"event\":\"SHUTDOWN\"}");
       setState(S_SHUTDOWN);
     }
@@ -860,9 +1075,10 @@ void setup() {
   pinMode(BTN_VOLUP,   INPUT_PULLUP);
   pinMode(BTN_VOLDOWN, INPUT_PULLUP);
 
-  // Pololu OFF pin
+  // Pololu OFF pin & Pi Shutdown Sense pin
   pinMode(POLOLU_OFF_PIN, OUTPUT);
   digitalWrite(POLOLU_OFF_PIN, LOW); // keep power rails alive
+  pinMode(PI_SHUTDOWN_SENSE_PIN, INPUT_PULLDOWN);
 
   // Startup rainbow
   uint32_t colors[6] = {
@@ -882,16 +1098,9 @@ void setup() {
 
   // INA226 init
   ina226_init();
-  delay(200);
-
   if (ina226_scan()) {
     Serial.println("INA226 found at 0x40");
-    // Initial voltage-based SoC estimate
-    packVoltage = ina226_voltage();
-    socPercent  = voltageToSoC(packVoltage);
-    socValid    = true;
-    Serial.print("Initial SoC from voltage: ");
-    Serial.print(socPercent, 1); Serial.println("%");
+    loadSoC();
     reportSoC();
   } else {
     Serial.println("INA226 not found!");
@@ -905,7 +1114,7 @@ void setup() {
 
   // Start in booting state and notify the Pi
   setState(S_BOOTING);
-  Serial1.println("{\"event\":\"BOOTING\"}");
+  Serial1.println("{\"event\":\"BOOTING\",\"version\":\"" FIRMWARE_VERSION "\"}");
 }
 
 void loop() {
@@ -921,6 +1130,8 @@ void loop() {
       case S_VOLUME:       frameVolume();  break;
       case S_OFF:          frameOff();     break;
       case S_SHUTDOWN:     frameShutdown(); break;
+      case S_LED_TEST:     frameLedTest(); break;
+      case S_IDLE:         allOff();       break;
     }
   }
 
@@ -939,6 +1150,9 @@ void loop() {
       inputBuffer = "";
     } else {
       inputBuffer += c;
+      if (inputBuffer.length() > 128) {
+        inputBuffer = ""; // Prevent memory exhaustion from UART noise during shutdown
+      }
     }
   }
 }
