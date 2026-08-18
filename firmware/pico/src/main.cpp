@@ -612,7 +612,7 @@ void frameShutdown() {
   if (cutPower) {
     Serial.println("💥 [Pico] Initiating smooth LED fade-out before cutting power rails...");
     unsigned long fadeStart = millis();
-    const unsigned long FADE_DURATION = 600;
+    const unsigned long FADE_DURATION = 2000;
     while (millis() - fadeStart < FADE_DURATION) {
       float progress = (float)(millis() - fadeStart) / FADE_DURATION;
       float factor   = 1.0f - progress;
