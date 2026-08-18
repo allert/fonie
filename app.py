@@ -26,7 +26,7 @@ MEDIA_DIR     = os.path.expanduser('~/rfid-player/media')
 MAPPINGS_FILE = os.path.expanduser('~/rfid-player/rfid_mappings.json')
 SETTINGS_FILE = os.path.expanduser('~/rfid-player/settings.json')
 SOUNDS_DIR    = os.path.expanduser('~/rfid-player/sounds')
-AUDIO_DEVICE  = 'plughw:2,0'
+AUDIO_DEVICE  = 'default'
 MPV_SOCKET    = '/tmp/mpv.sock'
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
@@ -219,6 +219,8 @@ def send_pico(event, **kwargs):
             print(f"❌ Pico send error: {e}")
             pico_serial = None
 
+has_played_startup_sound = False
+
 def pico_connect_internal():
     global pico_serial
     try:
@@ -242,8 +244,14 @@ def pico_connect():
     with pico_lock:
         pico_connect_internal()
 
+def trigger_startup_sequence():
+    global has_played_startup_sound
+    if not has_played_startup_sound:
+        has_played_startup_sound = True
+        play_system_sound('startup')
+
 def handle_pico_message(data):
-    global battery_state, button_state, playback_state, pico_is_alive, pico_version
+    global battery_state, button_state, playback_state, pico_is_alive, pico_version, has_played_startup_sound
     event = data.get('event')
 
     if data.get('version'):
@@ -257,16 +265,38 @@ def handle_pico_message(data):
     elif event == 'BOOTING':
         print("Pico reported BOOTING. Sending READY to handshake.")
         send_pico("READY")
-        play_system_sound('startup')
+        pico_vol = data.get('volume')
+        if pico_vol is not None:
+            try:
+                pico_vol = max(0, min(100, int(pico_vol)))
+                playback_state['volume'] = pico_vol
+                set_system_volume(pico_vol)
+                s = load_settings(); s['volume'] = pico_vol; save_settings(s)
+                print(f"🔊 Synced volume from Pico BOOTING: {pico_vol}%")
+            except (ValueError, TypeError): pass
         b = load_settings().get('brightness', {})
         if b:
             send_pico("BRIGHTNESS", ring=b.get('ring', 60), matrix=b.get('matrix', 40))
+        trigger_startup_sequence()
+    elif event == 'VOLUME':
+        vol = data.get('level')
+        if vol is not None:
+            try:
+                vol = max(0, min(100, int(vol)))
+                playback_state['volume'] = vol
+                set_system_volume(vol)
+                s = load_settings(); s['volume'] = vol; save_settings(s)
+                print(f"🔊 Synced volume from Pico VOLUME event: {vol}%")
+            except (ValueError, TypeError): pass
+        trigger_startup_sequence()
     elif event == 'PING':
         send_pico("PONG")
     elif event == 'SHUTDOWN':
         print("⚠️  Shutdown requested by Pico (long-press)")
+        stop_playback(fast=True)
+        time.sleep(0.1)
         play_system_sound('shutdown')
-        time.sleep(1)  # let the sound play
+        time.sleep(4.5)  # Let full 4.27s shutdown.wav finish playing
         subprocess.run(['sudo', 'shutdown', '-h', 'now'])
     elif event == 'SOC':
         battery_state = {
@@ -366,11 +396,13 @@ def play_sound(filename):
     path = os.path.join(SOUNDS_DIR, filename)
     if not os.path.exists(path):
         return
-    try:
-        subprocess.run(['aplay', '-D', AUDIO_DEVICE, path],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception as e:
-        print(f"❌ Sound error: {e}")
+    def _play():
+        try:
+            subprocess.run(['aplay', '-D', AUDIO_DEVICE, path],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"❌ Sound error: {e}")
+    threading.Thread(target=_play, daemon=True).start()
 
 def play_system_sound(event_name, default_filename=None):
     settings = load_settings()
@@ -379,13 +411,16 @@ def play_system_sound(event_name, default_filename=None):
     if filename:
         play_sound(filename)
 
-def stop_playback():
+def stop_playback(fast=False):
     global mpv_process
     if mpv_process and mpv_process.poll() is None:
-        for vol in range(100, 0, -5):
-            mpv_command({"command": ["set_property", "volume", vol]})
-            time.sleep(0.05)
+        if not fast:
+            for vol in range(100, 0, -5):
+                mpv_command({"command": ["set_property", "volume", vol]})
+                time.sleep(0.05)
         mpv_process.terminate()
+        try: mpv_process.wait(timeout=0.5)
+        except: pass
         mpv_process = None
     if os.path.exists(MPV_SOCKET):
         try: os.remove(MPV_SOCKET)
@@ -1045,10 +1080,26 @@ def api_media_play():
             return jsonify({'success': True})
     return jsonify({'error': 'Invalid request'}), 400
 
+# ── Continuous Audio Keep-Alive ────────────────────────────────────────────────
+def start_audio_keepalive():
+    def _keepalive():
+        while True:
+            try:
+                # Stream digital silence into ALSA dmix to keep I2S clocks active continuously
+                proc = subprocess.Popen(
+                    ['aplay', '-D', 'default', '-t', 'raw', '-r', '48000', '-c', '2', '-f', 'S32_LE', '/dev/zero'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                proc.wait()
+            except Exception as e:
+                time.sleep(1)
+    threading.Thread(target=_keepalive, daemon=True).start()
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print("🎵 Fonie - RFID Music Player")
     print("=" * 50)
+    start_audio_keepalive()
     set_system_volume(playback_state['volume'])
     pico_connect()
     threading.Thread(target=serial_listener, daemon=True).start()

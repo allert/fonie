@@ -32,17 +32,19 @@ try:
     ser.reset_input_buffer()
 
     print("Sending ENTER_OTA...")
-    ser.write(b'\n')
-    time.sleep(0.1)
-    ser.write(b'{"event":"ENTER_OTA"}\n')
-    
-    # Wait for OTA_READY
     ready = False
-    for _ in range(10):
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
-        print(f"Pico: {line}")
-        if 'OTA_READY' in line:
-            ready = True
+    for i in range(15):
+        ser.write(b'{"event":"ENTER_OTA"}\n')
+        ser.flush()
+        time.sleep(0.15)
+        while ser.in_waiting:
+            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            if line:
+                print(f"Pico: {line}")
+            if 'OTA_READY' in line:
+                ready = True
+                break
+        if ready:
             break
     
     if not ready:

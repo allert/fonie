@@ -86,6 +86,7 @@ unsigned long stateStart = 0;
 unsigned long lastFrame  = 0;
 
 void reportSoC();
+String extractValue(const String& json, const String& key);
 float   spinPos    = 0.0;
 float   breathVal  = 1.0;
 int     breathDir  = -1;
@@ -236,6 +237,42 @@ void loadSoC() {
   lastSavedSoC = socPercent;
   socValid    = true;
   Serial.printf("Initial SoC from calibrated voltage: %.1f%%\n", socPercent);
+}
+
+// ── Volume persistence (LittleFS) ─────────────────────────────────────────────
+static int lastSavedVolume = -1;
+
+void saveVolume(int vol) {
+  vol = constrain(vol, VOL_MIN, VOL_MAX);
+  volumeLevel = vol;
+  if (volumeLevel != lastSavedVolume) {
+    lastSavedVolume = volumeLevel;
+    File f = LittleFS.open("/vol.json", "w");
+    if (f) {
+      f.printf("{\"vol\":%d}", volumeLevel);
+      f.close();
+      Serial.printf("Saved volume to LittleFS: %d\n", volumeLevel);
+    }
+  }
+}
+
+void loadVolume() {
+  if (LittleFS.exists("/vol.json")) {
+    File f = LittleFS.open("/vol.json", "r");
+    if (f) {
+      String content = f.readString();
+      f.close();
+      int val = extractValue(content, "vol").toInt();
+      if (val >= VOL_MIN && val <= VOL_MAX) {
+        volumeLevel = val;
+        lastSavedVolume = volumeLevel;
+        Serial.printf("Loaded persistent volume from LittleFS: %d\n", volumeLevel);
+        return;
+      }
+    }
+  }
+  volumeLevel = 80;
+  lastSavedVolume = 80;
 }
 
 // ── SoC update (coulomb counting + correction) ────────────────────────────────
@@ -502,6 +539,10 @@ void setState(State s) {
     piNoResponseDetected = false;
     noResponseStartTime = 0;
     ledsCleared = false;
+    ring.setBrightness(255);
+    matrix.setBrightness(255);
+    stripL.setBrightness(255);
+    stripR.setBrightness(255);
   }
 }
 
@@ -525,10 +566,10 @@ void frameShutdown() {
 
   // 1. LED Feedback: Radar spinner animation while Pi shuts down
   float angle = (float)(now % 1200) / 1200.0f * 2.0f * M_PI;
-  drawMatrixSpin(angle, 255, 60, 0); // Warm amber spinning radar
-  drawRingSpin(angle, 255, 60, 0);
+  drawMatrixSpin(angle, 255, 80, 0); // High-intensity warm amber spinning radar
+  drawRingSpin(angle, 255, 80, 0);
   stripL.clear(); stripR.clear(); stripL.show(); stripR.show();
-  setRGB(25, 6, 0);
+  setRGB(255, 80, 0);
 
   // 2. Pi Polling logic
   if (!piNoResponseDetected) {
@@ -550,8 +591,8 @@ void frameShutdown() {
   bool cutPower = false;
   
   // Hardware signal from Pi gpio-poweroff overlay (Pi GPIO 16 -> Pico GP8)
-  // (Guard with elapsed >= 500ms so the spinner animation is visibly rendered while Pi halts)
-  if (elapsed >= 500 && digitalRead(PI_SHUTDOWN_SENSE_PIN) == HIGH) {
+  // (Guard with elapsed >= 6000ms so shutdown sound plays completely & Pi halts cleanly)
+  if (elapsed >= 6000 && digitalRead(PI_SHUTDOWN_SENSE_PIN) == HIGH) {
     Serial.println("Pico: Hardware gpio-poweroff signal received from Pi. Cutting power immediately!");
     cutPower = true;
   }
@@ -750,6 +791,9 @@ void frameOff() {
 
 // ── Event handlers ────────────────────────────────────────────────────────────
 void onReady() {
+  String msg = "{\"event\":\"VOLUME\",\"level\":" + String(volumeLevel) + "}";
+  Serial1.println(msg); Serial.println(msg);
+
   ring.fill(ring.Color(180,180,180));
   drawMatrixSolid(180,180,180);
   stripL.fill(stripL.Color(180,180,180));
@@ -771,7 +815,7 @@ void onPlaying(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void onVolume(int vol) {
-  volumeLevel    = constrain(vol, VOL_MIN, VOL_MAX);
+  saveVolume(vol);
   preVolumeState = currentState;
   setState(S_VOLUME);
 }
@@ -1059,6 +1103,7 @@ void setup() {
     Serial.println("LittleFS mount failed!");
   } else {
     Serial.println("LittleFS mount success.");
+    loadVolume();
   }
 
   rgb.begin();    rgb.setBrightness(80);
@@ -1114,7 +1159,9 @@ void setup() {
 
   // Start in booting state and notify the Pi
   setState(S_BOOTING);
-  Serial1.println("{\"event\":\"BOOTING\",\"version\":\"" FIRMWARE_VERSION "\"}");
+  Serial1.print("{\"event\":\"BOOTING\",\"version\":\"" FIRMWARE_VERSION "\",\"volume\":");
+  Serial1.print(volumeLevel);
+  Serial1.println("}");
 }
 
 void loop() {
