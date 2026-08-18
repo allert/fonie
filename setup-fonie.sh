@@ -34,14 +34,19 @@ echo "⚠️  Edit .env with your Spotify credentials!"
 # [index.html content would go here]
 
 # Setup nginx
-sudo tee /etc/nginx/sites-available/fonie > /dev/null << 'EOF'
+sudo tee /etc/nginx/sites-available/default > /dev/null << 'EOF'
 server {
-    listen 5000 ssl;
-    server_name fonie2.local;
-    ssl_certificate /home/allert/rfid-player/cert.pem;
-    ssl_certificate_key /home/allert/rfid-player/key.pem;
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name _;
+
     location / {
         proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 EOF
