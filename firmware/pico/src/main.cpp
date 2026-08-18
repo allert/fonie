@@ -610,7 +610,35 @@ void frameShutdown() {
   }
 
   if (cutPower) {
+    Serial.println("💥 [Pico] Initiating smooth LED fade-out before cutting power rails...");
+    unsigned long fadeStart = millis();
+    const unsigned long FADE_DURATION = 600;
+    while (millis() - fadeStart < FADE_DURATION) {
+      float progress = (float)(millis() - fadeStart) / FADE_DURATION;
+      float factor   = 1.0f - progress;
+      if (factor < 0.0f) factor = 0.0f;
+
+      uint8_t bRing   = (uint8_t)(255 * factor);
+      uint8_t bMatrix = (uint8_t)(255 * factor);
+      uint8_t bStrips = (uint8_t)(255 * factor);
+
+      ring.setBrightness(bRing);
+      matrix.setBrightness(bMatrix);
+      stripL.setBrightness(bStrips);
+      stripR.setBrightness(bStrips);
+
+      float angle = (float)(millis() % 1200) / 1200.0f * 2.0f * M_PI;
+      drawMatrixSpin(angle, 255, 80, 0);
+      drawRingSpin(angle, 255, 80, 0);
+      stripL.clear(); stripR.clear();
+      setRGB((uint8_t)(255 * factor), (uint8_t)(80 * factor), 0);
+
+      ring.show(); matrix.show(); stripL.show(); stripR.show();
+      delay(15);
+    }
+
     allOff();
+    delay(50);
     Serial.println("💥 [Pico] DRIVING POLOLU_OFF_PIN (GP14) HIGH - CUTTING POWER RAILS!");
     Serial1.println("💥 [Pico] DRIVING POLOLU_OFF_PIN (GP14) HIGH - CUTTING POWER RAILS!");
     digitalWrite(POLOLU_OFF_PIN, HIGH);
