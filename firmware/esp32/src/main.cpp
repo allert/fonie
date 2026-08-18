@@ -21,14 +21,15 @@ PN532_I2C pn532_i2c(Wire);
 PN532 nfc(pn532_i2c);
 HardwareSerial RpiSerial(1);   // UART1
 
-const unsigned long POLL_INTERVAL_MS   = 50;
-const unsigned long REMOVAL_TIMEOUT_MS = 1000;
+const unsigned long POLL_INTERVAL_MS = 50;
+const int MAX_MISSED_READS           = 3; // 3 consecutive misses (~150ms) triggers TAG_OFF
 
 bool inApMode = false;
 bool inStaMode = false;
 bool otaStarted = false;
 bool pn532_connected = false;
 bool tagPresent = false;
+int missedReads = 0;
 String currentUid = "";
 unsigned long lastSeen = 0, lastPoll = 0;
 
@@ -269,6 +270,7 @@ void loop() {
     if (ok) {
       String uidStr = uidToString(uid, uidLength);
       lastSeen = now;
+      missedReads = 0; // Reset consecutive miss counter on successful read
       if (!tagPresent) {
         tagPresent = true;
         currentUid = uidStr;
@@ -280,11 +282,15 @@ void loop() {
         currentUid = uidStr;
         Serial.printf("TAG_CHANGED %s\n", currentUid.c_str());
       }
-    } else if (tagPresent && (now - lastSeen) > REMOVAL_TIMEOUT_MS) {
-      RpiSerial.printf("{\"event\":\"TAG_OFF\",\"uid\":\"%s\"}\n", currentUid.c_str());
-      Serial.printf("TAG_OFF %s\n", currentUid.c_str());
-      tagPresent = false;
-      currentUid = "";
+    } else if (tagPresent) {
+      missedReads++;
+      if (missedReads >= MAX_MISSED_READS) {
+        RpiSerial.printf("{\"event\":\"TAG_OFF\",\"uid\":\"%s\"}\n", currentUid.c_str());
+        Serial.printf("TAG_OFF %s\n", currentUid.c_str());
+        tagPresent = false;
+        currentUid = "";
+        missedReads = 0;
+      }
     }
   }
 }
