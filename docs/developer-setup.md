@@ -27,12 +27,12 @@ To deploy or sync configurations, the deployment scripts rely on passwordless SS
    ```
 2. **Copy the key to the Raspberry Pi**:
    ```bash
-   ssh-copy-id allert@fonie2.local
+   ssh-copy-id allert@fonie.local
    ```
-   *Replace `allert@fonie2.local` with the Pi's actual hostname/IP if different.*
+   *Replace `allert@fonie.local` with the Pi's actual hostname/IP if different.*
 3. **Test connection**: Ensure you can SSH into the Pi without being prompted for a password:
    ```bash
-   ssh allert@fonie2.local
+   ssh allert@fonie.local
    ```
 
 ---
@@ -59,7 +59,7 @@ If you are setting up a fully offline developer workspace, you can manually copy
 ```env
 SPOTIFY_CLIENT_ID=mock_id
 SPOTIFY_CLIENT_SECRET=mock_secret
-SPOTIFY_REDIRECT_URI=https://fonie2.local:5000/callback
+SPOTIFY_REDIRECT_URI=http://fonie.local/callback
 ```
 
 ---
@@ -70,13 +70,13 @@ Scripts are provided in the [scripts/](file:///c:/Users/aller/Projects/fonie/fon
 
 ### A. Deploying Python Web App (Pi)
 Copies the Flask code and templates to the Pi and restarts the systemd service.
-- **Linux / macOS**: `./scripts/deploy-pi.sh [allert@fonie2.local]`
-- **Windows**: `.\scripts\deploy-pi.ps1 [-Target allert@fonie2.local]`
+- **Linux / macOS**: `./scripts/deploy-pi.sh [allert@fonie.local]`
+- **Windows**: `.\scripts\deploy-pi.ps1 [-Target allert@fonie.local]`
 
 ### B. Deploying RP2040 Pico Firmware
 Compiles the PlatformIO project under `firmware/pico`, transfers the binary to the Pi, and runs the UART flasher script on the Pi.
-- **Linux / macOS**: `./scripts/deploy-pico.sh [allert@fonie2.local]`
-- **Windows**: `.\scripts\deploy-pico.ps1 [-Target allert@fonie2.local]`
+- **Linux / macOS**: `./scripts/deploy-pico.sh [allert@fonie.local]`
+- **Windows**: `.\scripts\deploy-pico.ps1 [-Target allert@fonie.local]`
 
 ### C. Deploying ESP32-C3 Firmware
 Compiles the PlatformIO project under `firmware/esp32` and uploads the firmware over Wi-Fi (ArduinoOTA).

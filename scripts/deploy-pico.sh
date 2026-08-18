@@ -10,7 +10,7 @@ if ! command -v pio &> /dev/null; then
     fi
 fi
 
-TARGET="${1:-allert@fonie2.local}"
+TARGET="${1:-allert@fonie.local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🚀 Compiling Pico Firmware..."

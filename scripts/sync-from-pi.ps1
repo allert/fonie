@@ -1,5 +1,5 @@
 param (
-    [string]$Target = "allert@fonie2.local"
+    [string]$Target = "allert@fonie.local"
 )
 
 $repoDir = Resolve-Path "$PSScriptRoot\.."

@@ -22,7 +22,7 @@ chmod +x setup.sh
 2. `pip3 install -r requirements.txt`
 3. Edit `.env` with Spotify credentials
 4. `systemctl start fonie`
-5. Visit `http://fonie2.local`
+5. Visit `http://fonie.local`
 
 ## Files
 - `app.py` - Flask backend

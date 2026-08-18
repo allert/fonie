@@ -13,7 +13,7 @@ fi
 TARGET="${1:-fonie-esp32.local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PI_TARGET="${2:-allert@fonie2.local}"
+PI_TARGET="${2:-allert@fonie.local}"
 
 echo "🚀 Compiling ESP32 Firmware..."
 cd "$SCRIPT_DIR/../firmware/esp32"

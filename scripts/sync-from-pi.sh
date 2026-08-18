@@ -2,7 +2,7 @@
 # Sync configuration and data files from the Raspberry Pi back to the local repository
 
 set -e
-TARGET="${1:-allert@fonie2.local}"
+TARGET="${1:-allert@fonie.local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
