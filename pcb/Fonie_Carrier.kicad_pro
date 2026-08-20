@@ -1,0 +1,29 @@
+{
+  "board": {
+    "3d_models": [],
+    "design_settings": {
+      "rules": {
+        "min_clearance": 0.2,
+        "min_track_width": 0.25
+      }
+    }
+  },
+  "meta": {
+    "filename": "Fonie_Carrier.kicad_pro",
+    "version": 1
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "clearance": 0.2,
+        "name": "Default",
+        "track_width": 0.35
+      },
+      {
+        "clearance": 0.3,
+        "name": "Power",
+        "track_width": 1.0
+      }
+    ]
+  }
+}

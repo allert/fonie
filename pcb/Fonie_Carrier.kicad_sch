@@ -1,0 +1,13 @@
+(kicad_sch (version 20230121) (generator eeschema)
+  (uuid "65a00001-0000-0000-0000-000000000000")
+  (paper "A4")
+  (title_block
+    (title "Fonie Mainboard Carrier PCB")
+    (company "Fonie Open Hardware")
+    (rev "v1.0")
+  )
+  (lib_symbols)
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)

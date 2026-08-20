@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""
+Fonie Carrier PCB Generator Script
+Generates a complete KiCad v7/v8 project directory (`pcb/`) containing:
+  - Fonie_Carrier.kicad_pro (KiCad Project)
+  - Fonie_Carrier.kicad_sch (KiCad Schematic)
+  - Fonie_Carrier.kicad_pcb (KiCad PCB Layout with edge cuts, component pads, nets, and silkscreen)
+"""
+
+import os
+import json
+
+PCB_DIR = os.path.join(os.path.dirname(__file__), '..', 'pcb')
+os.makedirs(PCB_DIR, exist_ok=True)
+
+PRO_PATH = os.path.join(PCB_DIR, 'Fonie_Carrier.kicad_pro')
+SCH_PATH = os.path.join(PCB_DIR, 'Fonie_Carrier.kicad_sch')
+PCB_PATH = os.path.join(PCB_DIR, 'Fonie_Carrier.kicad_pcb')
+
+# ── 1. KiCad Project File (.kicad_pro) ───────────────────────────────────────
+pro_content = {
+    "board": {
+        "3d_models": [],
+        "design_settings": {
+            "rules": {
+                "min_clearance": 0.2,
+                "min_track_width": 0.25
+            }
+        }
+    },
+    "meta": {
+        "filename": "Fonie_Carrier.kicad_pro",
+        "version": 1
+    },
+    "net_settings": {
+        "classes": [
+            {
+                "clearance": 0.2,
+                "name": "Default",
+                "track_width": 0.35
+            },
+            {
+                "clearance": 0.3,
+                "name": "Power",
+                "track_width": 1.0
+            }
+        ]
+    }
+}
+
+with open(PRO_PATH, 'w') as f:
+    json.dump(pro_content, f, indent=2)
+
+# ── 2. KiCad Schematic File (.kicad_sch) ─────────────────────────────────────
+sch_content = """(kicad_sch (version 20230121) (generator eeschema)
+  (uuid "65a00001-0000-0000-0000-000000000000")
+  (paper "A4")
+  (title_block
+    (title "Fonie Mainboard Carrier PCB")
+    (company "Fonie Open Hardware")
+    (rev "v1.0")
+  )
+  (lib_symbols)
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)
+"""
+
+with open(SCH_PATH, 'w') as f:
+    f.write(sch_content)
+
+# ── 3. KiCad PCB File (.kicad_pcb) ───────────────────────────────────────────
+pcb_content = """(kicad_pcb (version 20221018) (generator pcbnew)
+  (general
+    (thickness 1.6)
+  )
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal)
+    (36 "B.SilkS" user "B.Silkscreen")
+    (37 "F.SilkS" user "F.Silkscreen")
+    (38 "B.Mask" user)
+    (39 "F.Mask" user)
+    (44 "Edge.Cuts" user)
+    (49 "F.Fab" user)
+  )
+  (setup
+    (pad_to_mask_clearance 0.05)
+    (pcbplotparams
+      (usegerberattributes true)
+      (usegerberadvancedattributes true)
+      (creategerberjobfile true)
+    )
+  )
+
+  ;; Net Definitions
+  (net 0 "")
+  (net 1 "GND")
+  (net 2 "+5V")
+  (net 3 "+12V_BAT")
+  (net 4 "PI_PICO_TX")
+  (net 5 "PI_PICO_RX")
+  (net 6 "PI_ESP_TX")
+  (net 7 "PI_ESP_RX")
+  (net 8 "SHUTDOWN_SENSE")
+  (net 9 "POLOLU_OFF")
+  (net 10 "POLOLU_A")
+
+  ;; Board Edge Cuts (100mm x 80mm Outline)
+  (gr_rect (start 0 0) (end 100 80) (layer "Edge.Cuts") (width 0.15))
+
+  ;; Silkscreen Title Header
+  (gr_text "Fonie Carrier v1.0" (at 50 5) (layer "F.SilkS")
+    (effects (font (size 2.0 2.0) (thickness 0.3)))
+  )
+  (gr_text "Raspberry Pi 4 / Pico / ESP32 Mainboard" (at 50 9) (layer "F.SilkS")
+    (effects (font (size 1.2 1.2) (thickness 0.2)))
+  )
+
+  ;; Component 1: Raspberry Pi 4 2x20 Female Socket Header (Docks directly on Pi)
+  (footprint "Connector_IDC:IDC-Header_2x20_P2.54mm_Vertical" (layer "B.Cu")
+    (at 20 40)
+    (descr "Raspberry Pi 4 40-pin GPIO Header Socket")
+    (fp_text reference "J_PI1" (at 0 -3) (layer "B.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+    (fp_text value "Pi4_GPIO" (at 0 53) (layer "B.Fab") (effects (font (size 1 1) (thickness 0.15))))
+    ;; Pins 1 to 40
+    (pad "2" thru_hole rect (at 0 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 2 "+5V"))
+    (pad "4" thru_hole circle (at 2.54 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 2 "+5V"))
+    (pad "6" thru_hole circle (at 5.08 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 1 "GND"))
+    (pad "8" thru_hole circle (at 7.62 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 4 "PI_PICO_TX"))
+    (pad "10" thru_hole circle (at 10.16 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 5 "PI_PICO_RX"))
+    (pad "15" thru_hole circle (at 16.51 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 8 "SHUTDOWN_SENSE"))
+    (pad "32" thru_hole circle (at 38.1 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 6 "PI_ESP_TX"))
+    (pad "33" thru_hole circle (at 39.37 2.54) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 7 "PI_ESP_RX"))
+  )
+
+  ;; Component 2: RP2040 Zero Module Socket (Waveshare Footprint)
+  (footprint "Module:Waveshare_RP2040_Zero" (layer "F.Cu")
+    (at 65 25)
+    (fp_text reference "U_PICO1" (at 0 -12) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+    (fp_text value "RP2040_Zero" (at 0 12) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+    (pad "0" thru_hole rect (at -7.62 -8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 5 "PI_PICO_RX"))
+    (pad "1" thru_hole circle (at -5.08 -8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 4 "PI_PICO_TX"))
+    (pad "8" thru_hole circle (at 12.7 -8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 8 "SHUTDOWN_SENSE"))
+    (pad "14" thru_hole circle (at 12.7 8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 9 "POLOLU_OFF"))
+    (pad "15" thru_hole circle (at 10.16 8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask))
+    (pad "26" thru_hole circle (at -12.7 8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 10 "POLOLU_A"))
+    (pad "5V" thru_hole circle (at -15.24 -8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 2 "+5V"))
+    (pad "GND" thru_hole circle (at -15.24 8.89) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 1 "GND"))
+  )
+
+  ;; Component 3: ESP32-C3 SuperMini Module Socket
+  (footprint "Module:ESP32-C3_SuperMini" (layer "F.Cu")
+    (at 65 60)
+    (fp_text reference "U_ESP1" (at 0 -9) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+    (fp_text value "ESP32-C3" (at 0 9) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+    (pad "20" thru_hole rect (at -6.35 -6.35) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 6 "PI_ESP_TX"))
+    (pad "21" thru_hole circle (at -3.81 -6.35) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 7 "PI_ESP_RX"))
+    (pad "5V" thru_hole circle (at 6.35 -6.35) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 2 "+5V"))
+    (pad "GND" thru_hole circle (at 6.35 6.35) (size 1.6 1.6) (drill 0.9) (layers *.Cu *.Mask) (net 1 "GND"))
+  )
+
+  ;; Component 4: Pololu 2808 Switch 1x5 Header
+  (footprint "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical" (layer "F.Cu")
+    (at 15 15)
+    (fp_text reference "J_POL1" (at 0 -3) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+    (fp_text value "Pololu2808" (at 0 15) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+    (pad "1" thru_hole rect (at 0 0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 3 "+12V_BAT"))
+    (pad "2" thru_hole circle (at 0 2.54) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 1 "GND"))
+    (pad "3" thru_hole circle (at 0 5.08) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 2 "+5V"))
+    (pad "4" thru_hole circle (at 0 7.62) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 10 "POLOLU_A"))
+    (pad "5" thru_hole circle (at 0 10.16) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask) (net 9 "POLOLU_OFF"))
+  )
+
+  ;; Mounting Holes (M2.5 for Pi Standoffs)
+  (footprint "MountingHole:MountingHole_2.7mm_M2.5" (layer "F.Cu")
+    (at 5 5)
+    (pad "1" thru_hole circle (at 0 0) (size 5 5) (drill 2.7) (layers *.Cu *.Mask))
+  )
+  (footprint "MountingHole:MountingHole_2.7mm_M2.5" (layer "F.Cu")
+    (at 95 5)
+    (pad "1" thru_hole circle (at 0 0) (size 5 5) (drill 2.7) (layers *.Cu *.Mask))
+  )
+  (footprint "MountingHole:MountingHole_2.7mm_M2.5" (layer "F.Cu")
+    (at 5 75)
+    (pad "1" thru_hole circle (at 0 0) (size 5 5) (drill 2.7) (layers *.Cu *.Mask))
+  )
+  (footprint "MountingHole:MountingHole_2.7mm_M2.5" (layer "F.Cu")
+    (at 95 75)
+    (pad "1" thru_hole circle (at 0 0) (size 5 5) (drill 2.7) (layers *.Cu *.Mask))
+  )
+)
+"""
+
+with open(PCB_PATH, 'w') as f:
+    f.write(pcb_content)
+
+print(f"✅ Generated KiCad project at: {os.path.abspath(PCB_DIR)}")
+print(f"   - Project:   {PRO_PATH}")
+print(f"   - Schematic: {SCH_PATH}")
+print(f"   - PCB:       {PCB_PATH}")
