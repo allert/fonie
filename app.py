@@ -722,6 +722,14 @@ def api_mappings():
             m['status']   = download_queue[uid]['status']
             m['progress'] = download_queue[uid]['progress']
             m['error']    = download_queue[uid]['error']
+        media_path = m.get('media_path')
+        if media_path and os.path.exists(media_path):
+            m['tracks'] = sorted([
+                f for f in os.listdir(media_path)
+                if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+            ])
+        else:
+            m['tracks'] = []
     return jsonify(mappings)
 
 @app.route('/api/mappings/add', methods=['POST'])
