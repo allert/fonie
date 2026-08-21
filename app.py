@@ -618,9 +618,22 @@ def get_pi_wifi_credentials():
         print(f"Error extracting Wi-Fi credentials: {e}")
         return None, None
 
+ap_override_until = 0
+
+def force_ap_mode():
+    global wifi_state, ap_override_until
+    ap_override_until = time.time() + 300 # Keep AP open for 5 minutes minimum
+    send_esp32({"event": "WIFI_AP_START"})
+    send_pico("WIFI_AP")
+    wifi_state['ap_started'] = True
+    wifi_state['sta_started'] = False
+
 def wifi_sync_thread():
-    global wifi_state
+    global wifi_state, ap_override_until
     while True:
+        if time.time() < ap_override_until:
+            time.sleep(5)
+            continue
         if check_wifi_connection():
             if not wifi_state['sta_started']:
                 settings = load_settings()
@@ -668,11 +681,7 @@ def button_monitor_thread():
                 button_state['play']['triggered'] = True
                 button_state['prev']['triggered'] = True
                 play_system_sound('captive_portal', 'tag_mapped.wav')
-                send_esp32({"event": "WIFI_AP_START"})
-                send_pico("WIFI_AP")
-                global wifi_state
-                wifi_state['ap_started']  = True
-                wifi_state['sta_started'] = False
+                force_ap_mode()
                 
         time.sleep(0.1)
 
@@ -952,10 +961,7 @@ def api_ping():
 
 @app.route('/api/test_ap', methods=['POST'])
 def api_test_ap():
-    send_esp32({"event": "WIFI_AP_START"})
-    global wifi_state
-    wifi_state['ap_started'] = True
-    wifi_state['sta_started'] = False
+    force_ap_mode()
     return jsonify({'success': True})
 
 @app.route('/api/test_leds', methods=['POST'])
