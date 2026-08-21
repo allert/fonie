@@ -428,7 +428,8 @@ def stop_playback(fast=False):
 
 def play_mapping(mapping):
     global mpv_process, playback_state
-    stop_playback()
+    stop_playback(fast=True)
+    time.sleep(0.1)
     media_path = mapping.get('media_path')
     if not media_path or not os.path.exists(media_path):
         print(f"❌ Media path not found: {media_path}"); return
@@ -1060,6 +1061,53 @@ def api_media_music():
                 music.append(info)
     return jsonify(music)
 
+def play_media_path(path):
+    global mpv_process, playback_state
+    stop_playback(fast=True)
+    time.sleep(0.1)
+
+    full_path = os.path.join(MEDIA_DIR, path)
+    if not os.path.exists(full_path):
+        print(f"❌ Media path not found: {full_path}")
+        return False
+
+    if os.path.isfile(full_path):
+        folder = os.path.dirname(full_path)
+        all_tracks = sorted([
+            os.path.join(folder, f) for f in os.listdir(folder)
+            if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+        ])
+        if full_path in all_tracks:
+            idx = all_tracks.index(full_path)
+            tracks = all_tracks[idx:] + all_tracks[:idx]
+        else:
+            tracks = [full_path]
+    elif os.path.isdir(full_path):
+        tracks = sorted([
+            os.path.join(full_path, f) for f in os.listdir(full_path)
+            if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+        ])
+    else:
+        tracks = []
+
+    if not tracks:
+        print("❌ No tracks found to play")
+        return False
+
+    print(f"▶️ Web UI playing {len(tracks)} track(s) starting with {os.path.basename(tracks[0])}")
+    af_str = build_mpv_af_string()
+    mpv_cmd = ['mpv', '--no-video', '--audio-format=s32', f'--input-ipc-server={MPV_SOCKET}']
+    if af_str:
+        mpv_cmd.append(f'--af={af_str}')
+    
+    mpv_process = subprocess.Popen(
+        mpv_cmd + tracks,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    playback_state['paused'] = False
+    send_pico("PLAYING")
+    return True
+
 @app.route('/api/media/play', methods=['POST'])
 def api_media_play():
     data = request.json
@@ -1069,16 +1117,7 @@ def api_media_play():
         play_sound(path)
         return jsonify({'success': True})
     elif type == 'music':
-        # path is expected to be 'uid/track.mp3'
-        full_path = os.path.join(MEDIA_DIR, path)
-        if os.path.exists(full_path):
-            stop_playback()
-            global mpv_process, playback_state
-            mpv_process = subprocess.Popen(
-                ['mpv', '--no-video', f'--input-ipc-server={MPV_SOCKET}', full_path],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            playback_state['paused'] = False
+        if play_media_path(path):
             return jsonify({'success': True})
     return jsonify({'error': 'Invalid request'}), 400
 
