@@ -426,6 +426,131 @@ def stop_playback(fast=False):
         try: os.remove(MPV_SOCKET)
         except: pass
 
+import colorsys
+import math
+import struct
+
+def extract_color_palette(image_path):
+    try:
+        if not image_path or not os.path.exists(image_path):
+            return {'r': 0, 'g': 200, 'b': 200}, {'r': 0, 'g': 180, 'b': 255}
+        img = Image.open(image_path).convert('RGB')
+        img = img.resize((50, 50))
+        colors = img.getcolors(maxcolors=2500)
+        if not colors:
+            return {'r': 0, 'g': 200, 'b': 200}, {'r': 0, 'g': 180, 'b': 255}
+        
+        valid_colors = []
+        for count, (r, g, b) in colors:
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            if 20 < lum < 235:
+                valid_colors.append((count, r, g, b))
+        
+        if not valid_colors:
+            valid_colors = colors
+            
+        valid_colors.sort(reverse=True, key=lambda x: x[0])
+        _, pr, pg, pb = valid_colors[0]
+
+        h, s, v = colorsys.rgb_to_hsv(pr / 255.0, pg / 255.0, pb / 255.0)
+        h2 = (h + 0.5) % 1.0
+        sr, sg, sb = colorsys.hsv_to_rgb(h2, max(0.4, s), v)
+
+        color1 = {'r': int(pr), 'g': int(pg), 'b': int(pb)}
+        color2 = {'r': int(sr * 255), 'g': int(sg * 255), 'b': int(sb * 255)}
+        return color1, color2
+    except Exception as e:
+        print(f"Palette extraction error: {e}")
+        return {'r': 0, 'g': 200, 'b': 200}, {'r': 0, 'g': 180, 'b': 255}
+
+def analyze_audio_file_vibe(audio_file_path):
+    try:
+        if not audio_file_path or not os.path.exists(audio_file_path):
+            return "equalizer", 1.0
+        
+        cmd = [
+            'ffmpeg', '-ss', '5', '-t', '5', '-i', audio_file_path,
+            '-f', 's16le', '-ac', '1', '-ar', '11025', '-'
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        raw_data, _ = proc.communicate(timeout=3)
+        
+        if not raw_data or len(raw_data) < 22050:
+            return "equalizer", 1.0
+
+        num_samples = len(raw_data) // 2
+        samples = struct.unpack(f"<{num_samples}h", raw_data)
+
+        sum_sq = sum(s * s for s in samples)
+        rms = math.sqrt(sum_sq / num_samples) / 32768.0
+
+        win = 551
+        num_windows = num_samples // win
+        window_energies = []
+        for i in range(num_windows):
+            chunk = samples[i * win : (i + 1) * win]
+            w_rms = math.sqrt(sum(s * s for s in chunk) / win) / 32768.0
+            window_energies.append(w_rms)
+
+        peaks = 0
+        avg_e = sum(window_energies) / len(window_energies) if window_energies else 0.1
+        for i in range(1, len(window_energies) - 1):
+            if window_energies[i] > avg_e * 1.3 and window_energies[i] > window_energies[i-1] and window_energies[i] > window_energies[i+1]:
+                peaks += 1
+
+        bpm = (peaks / 5.0) * 60.0
+
+        if bpm >= 120 or (bpm >= 100 and rms > 0.15):
+            mode = "party"
+            speed = min(1.5, max(1.1, bpm / 100.0))
+        elif bpm <= 75 or rms < 0.05:
+            mode = "wave"
+            speed = max(0.4, min(0.8, bpm / 100.0))
+        elif rms < 0.08:
+            mode = "starfield"
+            speed = 0.9
+        else:
+            mode = "equalizer"
+            speed = min(1.3, max(0.8, bpm / 100.0))
+
+        print(f"🎵 Pure Python Audio Analysis [{os.path.basename(audio_file_path)}]: RMS={rms:.3f}, BPM={bpm:.1f} -> Mode={mode}, Speed={speed:.2f}")
+        return mode, round(speed, 2)
+    except Exception as e:
+        print(f"Audio analysis error: {e}")
+        return "equalizer", 1.0
+
+def send_playing_vibe(mapping):
+    color1 = mapping.get('color') or {'r': 0, 'g': 200, 'b': 200}
+    r1, g1, b1 = color1['r'], color1['g'], color1['b']
+    
+    color2 = mapping.get('color2')
+    if color2:
+        r2, g2, b2 = color2['r'], color2['g'], color2['b']
+    else:
+        r2, g2, b2 = g1, b1, r1
+
+    media_path = mapping.get('media_path')
+    mode = mapping.get('vibe_mode')
+    speed = mapping.get('vibe_speed')
+
+    if not mode or not speed:
+        if media_path and os.path.exists(media_path):
+            tracks = sorted([
+                os.path.join(media_path, f) for f in os.listdir(media_path)
+                if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+            ])
+            if tracks:
+                mode, speed = analyze_audio_file_vibe(tracks[0])
+
+    if not mode: mode = "equalizer"
+    if not speed: speed = 1.0
+
+    send_pico("PLAYING", **{
+        'r': int(r1), 'g': int(g1), 'b': int(b1),
+        'r2': int(r2), 'g2': int(g2), 'b2': int(b2),
+        'mode': str(mode), 'speed': float(speed)
+    })
+
 def play_mapping(mapping):
     global mpv_process, playback_state
     stop_playback(fast=True)
@@ -449,9 +574,7 @@ def play_mapping(mapping):
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     playback_state['paused'] = False
-    color = mapping.get('color')
-    if color: send_pico("PLAYING", r=color['r'], g=color['g'], b=color['b'])
-    else:     send_pico("PLAYING")
+    send_playing_vibe(mapping)
 
 # ── Download queue ────────────────────────────────────────────────────────────
 def download_mapping(uid, mapping):
@@ -479,7 +602,7 @@ def download_mapping(uid, mapping):
     errors = []
     ydl_opts = {
         'format':          'bestaudio/best',
-        'outtmpl':         os.path.join(media_path, '%(playlist_index)s-%(title)s.%(ext)s'),
+        'outtmpl':         os.path.join(media_path, '%(autonumber)02d-%(title)s.%(ext)s'),
         'quiet':           True, 'no_warnings': True,
         'ffmpeg_location': '/usr/bin',
         'postprocessors':  [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
@@ -493,15 +616,34 @@ def download_mapping(uid, mapping):
             errors.append(str(e))
     if errors and done == 0:
         download_queue[uid] = {'status': 'error', 'progress': 0, 'error': errors[0]}; return
-    color = extract_dominant_color(mapping.get('thumbnail'))
+    
+    # Download thumbnail image locally for palette analysis
+    thumb_path = os.path.join(media_path, 'thumbnail.jpg')
+    if mapping.get('thumbnail'):
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(mapping.get('thumbnail'), thumb_path)
+        except: pass
+
+    color1, color2 = extract_color_palette(thumb_path if os.path.exists(thumb_path) else None)
+
+    tracks = sorted([
+        os.path.join(media_path, f) for f in os.listdir(media_path)
+        if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+    ])
+    vibe_mode, vibe_speed = analyze_audio_file_vibe(tracks[0]) if tracks else ("equalizer", 1.0)
+
     download_queue[uid] = {'status': 'ready', 'progress': 100, 'error': None}
     mappings = load_mappings()
     if uid in mappings:
         mappings[uid]['status']     = 'ready'
         mappings[uid]['media_path'] = media_path
-        if color: mappings[uid]['color'] = color
+        mappings[uid]['color']      = color1
+        mappings[uid]['color2']     = color2
+        mappings[uid]['vibe_mode']  = vibe_mode
+        mappings[uid]['vibe_speed'] = vibe_speed
         save_mappings(mappings)
-    print(f"✅ Download complete for {uid}")
+    print(f"✅ Download & Audio Vibe Analysis complete for {uid} [Mode: {vibe_mode}, Speed: {vibe_speed}]")
 
 def start_download(uid, mapping):
     threading.Thread(target=download_mapping, args=(uid, mapping), daemon=True).start()
@@ -1119,7 +1261,10 @@ def play_media_path(path):
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     playback_state['paused'] = False
-    send_pico("PLAYING")
+    mappings = load_mappings()
+    uid = path.split('/')[0] if '/' in path else path
+    mapping = mappings.get(uid, {'title': os.path.basename(path)})
+    send_playing_vibe(mapping)
     return True
 
 @app.route('/api/media/play', methods=['POST'])
@@ -1150,6 +1295,34 @@ def start_audio_keepalive():
                 time.sleep(1)
     threading.Thread(target=_keepalive, daemon=True).start()
 
+def scan_and_analyze_existing_media():
+    try:
+        mappings = load_mappings()
+        updated = False
+        for uid, m in mappings.items():
+            if m.get('status') == 'ready' and m.get('media_path'):
+                media_path = m.get('media_path')
+                if os.path.exists(media_path):
+                    tracks = sorted([
+                        os.path.join(media_path, f) for f in os.listdir(media_path)
+                        if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
+                    ])
+                    if tracks and ('vibe_mode' not in m or 'color2' not in m):
+                        mode, speed = analyze_audio_file_vibe(tracks[0])
+                        thumb_file = os.path.join(media_path, 'thumbnail.jpg')
+                        color1, color2 = extract_color_palette(thumb_file if os.path.exists(thumb_file) else None)
+                        
+                        m['vibe_mode'] = mode
+                        m['vibe_speed'] = speed
+                        if not m.get('color'): m['color'] = color1
+                        m['color2'] = color2
+                        updated = True
+        if updated:
+            save_mappings(mappings)
+            print("✅ Pre-existing media song-agnostic audio & color analysis completed!")
+    except Exception as e:
+        print(f"Scan media analysis error: {e}")
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print("🎵 Fonie - RFID Music Player")
@@ -1161,6 +1334,7 @@ if __name__ == '__main__':
     threading.Thread(target=pico_listener,   daemon=True).start()
     threading.Thread(target=wifi_sync_thread, daemon=True).start()
     threading.Thread(target=button_monitor_thread, daemon=True).start()
-    print("📡 Serial listeners, Wi-Fi monitor, and button monitor started")
+    threading.Thread(target=scan_and_analyze_existing_media, daemon=True).start()
+    print("📡 Serial listeners, Wi-Fi monitor, button monitor & audio vibe analyzer started")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5001, debug=False)

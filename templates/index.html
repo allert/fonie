@@ -1902,7 +1902,8 @@
               `).join('')}
              </div>`
           : '';
-        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid">${uid}</div>${pb}${trackList}<div class="card-actions">${playBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
+        const vibeBadge = m.vibe_mode ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.08); color:var(--muted); text-transform:uppercase; font-weight:500;">🎵 ${m.vibe_mode} (${m.vibe_speed || 1}x)</span>` : '';
+        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span>${vibeBadge}</div>${pb}${trackList}<div class="card-actions">${playBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
     }
 

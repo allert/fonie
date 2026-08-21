@@ -93,6 +93,9 @@ int     breathDir  = -1;
 float   fadeVal    = 1.0;
 int     volumeLevel = 80;
 uint8_t animR = 0, animG = 200, animB = 200;
+uint8_t animR2 = 0, animG2 = 180, animB2 = 255;
+String animMode = "equalizer";
+float animSpeed = 1.0f;
 float   waveOffset = 0.0;
 
 // ── SoC / INA226 state ────────────────────────────────────────────────────────
@@ -716,42 +719,111 @@ void frameBurst() {
   setRGB(animR/2, animG/2, animB/2);
 }
 
-void framePlaying() {
-  breathVal += 0.008 * breathDir;
-  if (breathVal >= 1.0)  { breathVal = 1.0;  breathDir = -1; }
-  if (breathVal <= 0.5)  { breathVal = 0.5;  breathDir =  1; }
-  spinPos = fmod(spinPos + 0.15, RING_LEDS);
-  ring.clear();
-  int tailLen = (int)(10 * breathVal);
-  for (int t = 0; t < tailLen; t++) {
-    int pos = (int)(spinPos - t + RING_LEDS * 2) % RING_LEDS;
-    float tf = 1.0 - (float)t / tailLen;
-    ring.setPixelColor(pos, ring.Color((uint8_t)(animR*tf),(uint8_t)(animG*tf),(uint8_t)(animB*tf)));
+float eqHeights[8] = {0};
+float eqPeaks[8] = {0};
+float eqVelocities[8] = {0};
+
+void drawEqualizer(uint8_t r1, uint8_t g1, uint8_t b1, uint8_t r2, uint8_t g2, uint8_t b2, float speed) {
+  unsigned long now = millis();
+  matrixClear();
+
+  for (int col = 0; col < 8; col++) {
+    float noise = (sin(now * 0.007f * speed + col * 1.3f) + 1.0f) * 0.5f;
+    float pulse = (sin(now * 0.015f * speed + col * 0.7f) + 1.0f) * 0.5f;
+    float targetHeight = 1.0f + (noise * 0.6f + pulse * 0.4f) * 6.8f;
+
+    eqHeights[col] = eqHeights[col] * 0.65f + targetHeight * 0.35f;
+    if (eqHeights[col] > eqPeaks[col]) {
+      eqPeaks[col] = eqHeights[col];
+      eqVelocities[col] = 0.0f;
+    } else {
+      eqVelocities[col] += 0.15f * speed;
+      eqPeaks[col] -= eqVelocities[col];
+      if (eqPeaks[col] < 0) eqPeaks[col] = 0;
+    }
+
+    int heightInt = (int)eqHeights[col];
+    int peakInt = (int)eqPeaks[col];
+
+    for (int y = 0; y < 8; y++) {
+      int rowFromBottom = 7 - y;
+      if (rowFromBottom < heightInt) {
+        float f = (float)rowFromBottom / 7.0f;
+        uint8_t cr = (uint8_t)(r1 * (1.0f - f) + r2 * f);
+        uint8_t cg = (uint8_t)(g1 * (1.0f - f) + g2 * f);
+        uint8_t cb = (uint8_t)(b1 * (1.0f - f) + b2 * f);
+        matrixSet(col, y, cr, cg, cb);
+      } else if (rowFromBottom == peakInt && peakInt > 0) {
+        matrixSet(col, y, 255, 255, 255);
+      }
+    }
   }
-  ring.show();
-  waveOffset += 0.08;
-  drawMatrixWave(animR, animG, animB);
-  
-  // Breath effect for speaker strips
-  stripL.clear(); stripR.clear();
+  matrix.show();
+}
+
+void drawStereoVU(uint8_t r1, uint8_t g1, uint8_t b1, uint8_t r2, uint8_t g2, uint8_t b2, float speed) {
+  unsigned long now = millis();
+  float pL = (sin(now * 0.009f * speed) + 1.0f) * 0.5f;
+  float pR = (sin(now * 0.011f * speed + 0.8f) + 1.0f) * 0.5f;
+  int heightL = (int)(pL * STRIP_LEDS);
+  int heightR = (int)(pR * STRIP_LEDS);
+
+  stripL.clear();
+  stripR.clear();
+
   for (int i = 0; i < STRIP_LEDS; i++) {
-    // Wave moving along the strip
-    float phase = waveOffset + (i * 0.4); 
-    float s = (sin(phase) + 1.0) / 2.0;
-    
-    // Combine wave with overall breath
-    float intensity = s * breathVal;
-    uint8_t r = (uint8_t)(animR * intensity);
-    uint8_t g = (uint8_t)(animG * intensity);
-    uint8_t b = (uint8_t)(animB * intensity);
-    
-    stripL.setPixelColor(i, stripL.Color(r, g, b, 0));
-    stripR.setPixelColor(i, stripR.Color(r, g, b, 0));
+    float f = (float)i / STRIP_LEDS;
+    uint8_t cr = (uint8_t)(r1 * (1.0f - f) + r2 * f);
+    uint8_t cg = (uint8_t)(g1 * (1.0f - f) + g2 * f);
+    uint8_t cb = (uint8_t)(b1 * (1.0f - f) + b2 * f);
+
+    if (i < heightL) stripL.setPixelColor(i, stripL.Color(cr, cg, cb));
+    if (i < heightR) stripR.setPixelColor(i, stripR.Color(cr, cg, cb));
   }
-  stripL.show(); stripR.show();
-  
+  stripL.show();
+  stripR.show();
+}
+
+void drawStarfield(uint8_t r, uint8_t g, uint8_t b, float speed) {
+  matrixClear();
+  unsigned long now = millis();
+  for (int x = 0; x < 8; x++) {
+    for (int y = 0; y < 8; y++) {
+      float p = (sin(now * 0.004f * speed + (x * 7 + y * 13)) + 1.0f) * 0.5f;
+      if (p > 0.7f) {
+        float spark = (p - 0.7f) / 0.3f;
+        matrixSet(x, y, (uint8_t)(r * spark), (uint8_t)(g * spark), (uint8_t)(b * spark));
+      }
+    }
+  }
+  matrix.show();
+}
+
+void framePlaying() {
+  unsigned long now = millis();
+  float speed = animSpeed > 0.1f ? animSpeed : 1.0f;
+  spinPos = fmod(spinPos + 0.15f * speed, RING_LEDS);
+  waveOffset += 0.08f * speed;
+
+  drawRingSpin(spinPos * (2.0f * M_PI / RING_LEDS), animR, animG, animB);
+
+  if (animMode == "wave") {
+    drawMatrixWave(animR, animG, animB);
+    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed);
+  } else if (animMode == "starfield") {
+    drawStarfield(animR, animG, animB, speed);
+    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed * 0.5f);
+  } else if (animMode == "party") {
+    float angle = (float)(now % 1000) / 1000.0f * 2.0f * M_PI;
+    drawMatrixSpin(angle, animR, animG, animB);
+    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed * 1.2f);
+  } else {
+    drawEqualizer(animR, animG, animB, animR2, animG2, animB2, speed);
+    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed);
+  }
+
   overlaySoC();
-  setRGB(animR/4, animG/4, animB/4);
+  setRGB((animR + animR2) / 4, (animG + animG2) / 4, (animB + animB2) / 4);
 }
 
 void framePaused() {
@@ -979,14 +1051,25 @@ void handleEvent(const String& line) {
     setState(S_SHUTDOWN);
   }
   else if (event == "PLAYING") {
-    String rs = extractValue(line, "r");
-    String gs = extractValue(line, "g");
-    String bs = extractValue(line, "b");
-    onPlaying(
-      rs.length() ? rs.toInt() : animR,
-      gs.length() ? gs.toInt() : animG,
-      bs.length() ? bs.toInt() : animB
-    );
+    String rs  = extractValue(line, "r");
+    String gs  = extractValue(line, "g");
+    String bs  = extractValue(line, "b");
+    String r2s = extractValue(line, "r2");
+    String g2s = extractValue(line, "g2");
+    String b2s = extractValue(line, "b2");
+    String mode = extractValue(line, "mode");
+    String spd  = extractValue(line, "speed");
+
+    if (rs.length())   animR = rs.toInt();
+    if (gs.length())   animG = gs.toInt();
+    if (bs.length())   animB = bs.toInt();
+    if (r2s.length())  animR2 = r2s.toInt();
+    if (g2s.length())  animG2 = g2s.toInt();
+    if (b2s.length())  animB2 = b2s.toInt();
+    if (mode.length()) animMode = mode;
+    if (spd.length())  animSpeed = spd.toFloat();
+
+    setState(S_PLAYING);
   }
   else if (event == "PAUSED") setState(S_PAUSED);
   else if (event == "VOLUME") {
