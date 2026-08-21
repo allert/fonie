@@ -222,10 +222,11 @@ def send_pico(event, **kwargs):
 has_played_startup_sound = False
 
 def pico_connect_internal():
-    global pico_serial, pico_is_alive
+    global pico_serial, pico_is_alive, pico_version
     try:
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
         pico_is_alive = True
+        pico_version = '1.2.0'
         print(f"✅ Pico connected on {PICO_PORT}")
         payload = json.dumps({"event": "PING"})
         pico_serial.write((payload + '\n').encode())
@@ -257,7 +258,9 @@ def handle_pico_message(data):
     event = data.get('event')
 
     if data.get('version'):
-        pico_version = data.get('version')
+        pico_version = str(data.get('version'))
+    elif not pico_version:
+        pico_version = '1.2.0'
 
     if event:
         pico_is_alive = True
@@ -615,17 +618,34 @@ def download_mapping(uid, mapping):
         'keepvideo':       False,
         'extractor_args':  {'youtube': {'player_client': ['android', 'web']}},
     }
-    for url in urls:
+    def make_progress_hook(uid_key, current_idx, total_tracks):
+        def hook(d):
+            if d.get('status') == 'downloading':
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                downloaded = d.get('downloaded_bytes') or 0
+                if total_bytes > 0:
+                    track_pct = downloaded / total_bytes
+                    overall_pct = int(((current_idx + track_pct) / total_tracks) * 90.0)
+                    download_queue[uid_key]['progress'] = min(95, max(1, overall_pct))
+                    mappings = load_mappings()
+                    if uid_key in mappings:
+                        mappings[uid_key]['progress'] = download_queue[uid_key]['progress']
+                        save_mappings(mappings)
+        return hook
+
+    for idx, url in enumerate(urls):
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
+            current_ydl_opts = dict(ydl_opts)
+            current_ydl_opts['progress_hooks'] = [make_progress_hook(uid, idx, total)]
+            with yt_dlp.YoutubeDL(current_ydl_opts) as ydl: ydl.download([url])
             done += 1
-            download_queue[uid]['progress'] = int((done / total) * 100)
         except Exception as e:
             errors.append(str(e))
     if errors and done == 0:
         download_queue[uid] = {'status': 'error', 'progress': 0, 'error': errors[0]}; return
     
     # Download thumbnail image locally for palette analysis
+    download_queue[uid]['progress'] = 96
     thumb_path = os.path.join(media_path, 'thumbnail.jpg')
     if mapping.get('thumbnail'):
         try:
@@ -639,6 +659,7 @@ def download_mapping(uid, mapping):
         os.path.join(media_path, f) for f in os.listdir(media_path)
         if f.endswith(('.mp3', '.m4a', '.opus', '.webm'))
     ])
+    download_queue[uid]['progress'] = 98
     vibe_mode, vibe_speed = analyze_audio_file_vibe(tracks[0]) if tracks else ("equalizer", 1.0)
 
     download_queue[uid] = {'status': 'ready', 'progress': 100, 'error': None}
@@ -1072,6 +1093,12 @@ def api_sound_preset():
 
 @app.route('/api/debug')
 def api_debug():
+    global pico_version, esp32_version
+    if not pico_version:
+        send_pico("PING")
+    if not esp32_version and esp32_serial:
+        try: esp32_serial.write(b'{"event":"PING"}\n')
+        except: pass
     settings = load_settings()
     return jsonify({
         'app_version':     APP_VERSION,

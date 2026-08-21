@@ -1044,7 +1044,6 @@ void handleEvent(const String& line) {
   }
   else if (event == "READY" || event == "IDLE") onReady();
   else if (event == "WIFI_AP") setState(S_WIFI_AP);
-  else if (event == "PING") { Serial1.println("{\"event\":\"PONG\"}"); Serial.println("{\"event\":\"PONG\"}"); }
   else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true");
   else if (event == "TAG_OFF" || event == "TAG_UNKNOWN") setState(S_TAG_OFF_FADE);
   else if (event == "SHUTDOWN" || (event == "EVENT" && extractValue(line, "name") == "shutdown")) {
