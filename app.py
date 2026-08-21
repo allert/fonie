@@ -622,7 +622,7 @@ ap_override_until = 0
 
 def force_ap_mode():
     global wifi_state, ap_override_until
-    ap_override_until = time.time() + 300 # Keep AP open for 5 minutes minimum
+    ap_override_until = time.time() + 60 # Keep AP open for 1 minute (60s) override window
     send_esp32({"event": "WIFI_AP_START"})
     send_pico("WIFI_AP")
     wifi_state['ap_started'] = True
