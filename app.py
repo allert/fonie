@@ -222,9 +222,10 @@ def send_pico(event, **kwargs):
 has_played_startup_sound = False
 
 def pico_connect_internal():
-    global pico_serial
+    global pico_serial, pico_is_alive
     try:
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
+        pico_is_alive = True
         print(f"✅ Pico connected on {PICO_PORT}")
         payload = json.dumps({"event": "READY"})
         pico_serial.write((payload + '\n').encode())
@@ -239,6 +240,7 @@ def pico_connect_internal():
     except Exception as e:
         print(f"⚠️  Pico not connected: {e}")
         pico_serial = None
+        pico_is_alive = False
 
 def pico_connect():
     with pico_lock:
@@ -650,11 +652,12 @@ def start_download(uid, mapping):
 
 # ── ESP32 serial listener ─────────────────────────────────────────────────────
 def serial_listener():
-    global esp32_serial, current_tag
+    global esp32_serial, current_tag, esp32_is_alive
     while True:
         try:
             if not esp32_serial:
                 esp32_serial = serial.Serial(ESP32_PORT, SERIAL_BAUD, timeout=1)
+                esp32_is_alive = True
                 print(f"✅ ESP32 connected on {ESP32_PORT}")
             if esp32_serial.in_waiting:
                 line = esp32_serial.readline().decode('utf-8').strip()
@@ -664,7 +667,7 @@ def serial_listener():
                     try: handle_esp32_event(json.loads(line))
                     except json.JSONDecodeError: pass
         except serial.SerialException as e:
-            print(f"❌ ESP32 serial error: {e}"); esp32_serial = None; threading.Event().wait(5)
+            print(f"❌ ESP32 serial error: {e}"); esp32_serial = None; esp32_is_alive = False; threading.Event().wait(5)
         except Exception as e:
             print(f"❌ Error: {e}"); threading.Event().wait(1)
 
