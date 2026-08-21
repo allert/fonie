@@ -4,6 +4,15 @@
 
 Fonie is a kids' RFID music player. A child places an RFID tag on the scanner, and the associated music starts playing. It's a battery-powered portable unit with physical buttons, LED feedback, and a Flask web UI for management.
 
+## Version & Build Bumping Routine
+
+Every feature release, bug fix, or firmware update MUST follow this version bumping routine:
+1. **Raspberry Pi App:** Update `APP_VERSION = 'X.Y.Z'` in `app.py`.
+2. **RP2040 Pico Firmware:** Update `#define FIRMWARE_VERSION "X.Y.Z"` in `firmware/pico/src/main.cpp`.
+3. **ESP32 Firmware:** Update `#define FIRMWARE_VERSION "X.Y.Z"` in `firmware/esp32/src/main.cpp` when ESP32 code changes.
+4. **Handshake Verification:** Ensure `pico_connect_internal()` and `serial_listener()` issue `{"event":"PING"}` on connect so `pico_version` and `esp32_version` populate in `/api/debug` & Web UI.
+5. **Git Commit Message:** Include version number in release commit message (e.g. `bump: update version to v1.2.0`).
+
 ## Hardware Architecture
 
 Three compute nodes communicate over UART:

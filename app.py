@@ -227,7 +227,7 @@ def pico_connect_internal():
         pico_serial = serial.Serial(PICO_PORT, SERIAL_BAUD, timeout=1)
         pico_is_alive = True
         print(f"✅ Pico connected on {PICO_PORT}")
-        payload = json.dumps({"event": "READY"})
+        payload = json.dumps({"event": "PING"})
         pico_serial.write((payload + '\n').encode())
         pico_serial.flush()
         log_uart('→', 'pico', payload)
@@ -607,7 +607,13 @@ def download_mapping(uid, mapping):
         'outtmpl':         os.path.join(media_path, '%(autonumber)02d-%(title)s.%(ext)s'),
         'quiet':           True, 'no_warnings': True,
         'ffmpeg_location': '/usr/bin',
-        'postprocessors':  [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+        'postprocessors':  [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'keepvideo':       False,
+        'extractor_args':  {'youtube': {'player_client': ['android', 'web']}},
     }
     for url in urls:
         try:
@@ -659,6 +665,8 @@ def serial_listener():
                 esp32_serial = serial.Serial(ESP32_PORT, SERIAL_BAUD, timeout=1)
                 esp32_is_alive = True
                 print(f"✅ ESP32 connected on {ESP32_PORT}")
+                try: esp32_serial.write(b'{"event":"PING"}\n')
+                except: pass
             if esp32_serial.in_waiting:
                 line = esp32_serial.readline().decode('utf-8').strip()
                 print(f"📨 ESP32: {line}")
