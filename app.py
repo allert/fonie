@@ -634,6 +634,7 @@ def wifi_sync_thread():
         else:
             if not wifi_state['ap_started']:
                 send_esp32({"event": "WIFI_AP_START"})
+                send_pico("WIFI_AP")
                 wifi_state['ap_started']  = True
                 wifi_state['sta_started'] = False
         time.sleep(10)
@@ -665,8 +666,9 @@ def button_monitor_thread():
                 print("⚠️  Captive Portal triggered (Play + Prev held for 5s)")
                 button_state['play']['triggered'] = True
                 button_state['prev']['triggered'] = True
-                play_system_sound('captive_portal')
+                play_system_sound('captive_portal', 'tag_mapped.wav')
                 send_esp32({"event": "WIFI_AP_START"})
+                send_pico("WIFI_AP")
                 global wifi_state
                 wifi_state['ap_started']  = True
                 wifi_state['sta_started'] = False

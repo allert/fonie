@@ -66,7 +66,7 @@ Adafruit_NeoPixel stripL(STRIP_LEDS, STRIPL_PIN, NEO_GRBW + NEO_KHZ800);
 Adafruit_NeoPixel stripR(STRIP_LEDS, STRIPR_PIN, NEO_GRBW + NEO_KHZ800);
 
 // ── State machine ─────────────────────────────────────────────────────────────
-enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN, S_LED_TEST, S_IDLE };
+enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN, S_LED_TEST, S_IDLE, S_WIFI_AP };
 State currentState   = S_BOOTING;
 State preVolumeState = S_OFF;
 
@@ -945,6 +945,19 @@ void frameLedTest() {
   }
 }
 
+void frameWifiAp() {
+  unsigned long now = millis();
+  float angle = (float)(now % 1500) / 1500.0f * 2.0f * M_PI;
+  uint8_t pulse = (uint8_t)(100 + 155 * (0.5f + 0.5f * sin(now * 0.005f)));
+
+  drawMatrixSpin(angle, 0, 200, 255);
+  drawRingSpin(angle, 0, 220, 255);
+  stripL.fill(stripL.Color(0, pulse, 255, 100));
+  stripR.fill(stripR.Color(0, pulse, 255, 100));
+  stripL.show(); stripR.show();
+  setRGB(0, pulse, 255);
+}
+
 void handleEvent(const String& line) {
   Serial.print("Pi: "); Serial.println(line);
   String event = extractValue(line, "event");
@@ -958,6 +971,7 @@ void handleEvent(const String& line) {
     onLedTest(target);
   }
   else if (event == "READY" || event == "IDLE") onReady();
+  else if (event == "WIFI_AP") setState(S_WIFI_AP);
   else if (event == "PING") { Serial1.println("{\"event\":\"PONG\"}"); Serial.println("{\"event\":\"PONG\"}"); }
   else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true");
   else if (event == "TAG_OFF" || event == "TAG_UNKNOWN") setState(S_TAG_OFF_FADE);
@@ -1206,6 +1220,7 @@ void loop() {
       case S_OFF:          frameOff();     break;
       case S_SHUTDOWN:     frameShutdown(); break;
       case S_LED_TEST:     frameLedTest(); break;
+      case S_WIFI_AP:       frameWifiAp();  break;
       case S_IDLE:         allOff();       break;
     }
   }
