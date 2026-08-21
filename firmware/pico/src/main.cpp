@@ -43,7 +43,7 @@
 #define PACK_REST_I_MA       50.00f   // below this = at rest (no significant load/charge)
 #define CHARGE_TAPER_MA      150.00f  // CV phase taper threshold → set SoC = 100%
 
-#define FIRMWARE_VERSION "1.1.7"
+#define FIRMWARE_VERSION "1.2.0"
 
 // Buttons (INPUT_PULLDOWN, HIGH when pressed)
 #define BTN_PREV    29

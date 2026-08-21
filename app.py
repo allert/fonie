@@ -32,7 +32,7 @@ MPV_SOCKET    = '/tmp/mpv.sock'
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # ── Global state ──────────────────────────────────────────────────────────────
-APP_VERSION     = '1.1.1'
+APP_VERSION     = '1.2.0'
 pico_version    = None
 esp32_version   = None
 esp32_ip        = None
