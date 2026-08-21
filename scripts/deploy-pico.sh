@@ -28,6 +28,6 @@ scp "$FIRMWARE_BIN" "${TARGET}:~/rfid-player/firmware.bin"
 scp "$SCRIPT_DIR/pico_uart_flash.py" "${TARGET}:~/rfid-player/"
 
 echo "⚡ Flashing Pico over UART..."
-ssh "$TARGET" 'cd ~/rfid-player && sudo apt install -y python3-serial && python3 pico_uart_flash.py firmware.bin'
+ssh "$TARGET" 'cd ~/rfid-player && python3 pico_uart_flash.py firmware.bin'
 
 echo "✅ Pico deployed and restarted!"

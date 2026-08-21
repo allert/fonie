@@ -3,6 +3,8 @@
 #include <Updater.h>
 #include <LittleFS.h>
 #include <Wire.h>
+#include "hardware/watchdog.h"
+#include "hardware/structs/watchdog.h"
 
 // ── Pin config ────────────────────────────────────────────────────────────────
 #define RGB_PIN     16
@@ -287,6 +289,10 @@ void updateSoC() {
   lastSoCRead = now;
 
   packVoltage   = ina226_voltage();
+  if (packVoltage == 0.0f) {
+    ina226_init();
+    packVoltage = ina226_voltage();
+  }
   packCurrentMA = ina226_current();
   isCharging    = packCurrentMA < -PACK_REST_I_MA;
 
@@ -362,7 +368,9 @@ const uint8_t digitFont[10][5] = {
 
 // ── Matrix helpers ────────────────────────────────────────────────────────────
 int matrixPixel(int x, int y) {
-  return (y % 2 == 0) ? y * 8 + x : y * 8 + (7 - x);
+  int rx = y;
+  int ry = 7 - x;
+  return (ry % 2 == 0) ? ry * 8 + rx : ry * 8 + (7 - rx);
 }
 void matrixSet(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
   if (x < 0 || x >= 8 || y < 0 || y >= 8) return;
@@ -715,7 +723,6 @@ void frameBurst() {
   stripR.fill(stripR.Color((uint8_t)(animR*stripFade), (uint8_t)(animG*stripFade), (uint8_t)(animB*stripFade)));
   stripL.show(); stripR.show();
   
-  overlaySoC();
   setRGB(animR/2, animG/2, animB/2);
 }
 
@@ -822,7 +829,6 @@ void framePlaying() {
     drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed);
   }
 
-  overlaySoC();
   setRGB((animR + animR2) / 4, (animG + animG2) / 4, (animB + animB2) / 4);
 }
 
@@ -841,7 +847,6 @@ void framePaused() {
   stripR.fill(stripR.Color((uint8_t)(animR*0.3), (uint8_t)(animG*0.3), (uint8_t)(animB*0.3)));
   stripL.show(); stripR.show();
   
-  overlaySoC();
   setRGB(animR/4, animG/4, animB/4);
 }
 
@@ -856,12 +861,11 @@ void frameFade() {
   stripR.fill(stripR.Color((uint8_t)(animR*fadeVal), (uint8_t)(animG*fadeVal), (uint8_t)(animB*fadeVal)));
   stripL.show(); stripR.show();
   
-  overlaySoC();
   setRGB((uint8_t)(animR*fadeVal*0.2),(uint8_t)(animG*fadeVal*0.2),(uint8_t)(animB*fadeVal*0.2));
 }
 
 void frameVolume() {
-  if (millis() - stateStart > 2000) { setState(preVolumeState); return; }
+  if (millis() - stateStart > 1500) { setState(preVolumeState); return; }
   drawVolumeBar(volumeLevel);
   int litLeds = (volumeLevel * RING_LEDS) / 100;
   ring.clear();
@@ -886,21 +890,15 @@ void frameVolume() {
 }
 
 void frameOff() {
-  if (socValid) drawSoC((int)socPercent);
+  allOff();
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
 void onReady() {
   String msg = "{\"event\":\"VOLUME\",\"level\":" + String(volumeLevel) + "}";
   Serial1.println(msg); Serial.println(msg);
-
-  ring.fill(ring.Color(180,180,180));
-  drawMatrixSolid(180,180,180);
-  stripL.fill(stripL.Color(180,180,180));
-  stripR.fill(stripR.Color(180,180,180));
-  ring.show(); stripL.show(); stripR.show(); setRGB(180,180,180);
-  delay(200);
-  setState(S_OFF);
+  allOff();
+  setState(S_IDLE);
 }
 
 void onTagOn(bool mapped) {
@@ -916,7 +914,9 @@ void onPlaying(uint8_t r, uint8_t g, uint8_t b) {
 
 void onVolume(int vol) {
   saveVolume(vol);
-  preVolumeState = currentState;
+  if (currentState != S_VOLUME) {
+    preVolumeState = currentState;
+  }
   setState(S_VOLUME);
 }
 
@@ -1033,7 +1033,10 @@ void frameWifiAp() {
 void handleEvent(const String& line) {
   Serial.print("Pi: "); Serial.println(line);
   String event = extractValue(line, "event");
-  if      (event == "PING")     Serial1.println("{\"event\":\"PONG\",\"version\":\"" FIRMWARE_VERSION "\"}");
+  if (event == "PING") {
+    Serial1.println("{\"event\":\"PONG\",\"version\":\"" FIRMWARE_VERSION "\"}");
+    reportSoC();
+  }
   else if (event == "PONG") {
     lastPiResponseTime = millis();
     Serial.println("Pico: received PONG from Pi.");
@@ -1082,6 +1085,7 @@ void handleEvent(const String& line) {
     if (m.length()) { matrix.setBrightness(m.toInt()); matrix.show(); }
   }
   else if (event == "ENTER_OTA") {
+    hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
     Serial.println("Entering UART OTA mode...");
     
     // Flush any pending bytes in the RX buffer BEFORE sending OTA_READY
@@ -1106,12 +1110,14 @@ void handleEvent(const String& line) {
         uint8_t buf[1024];
         
         while (written < fileSize) {
+          watchdog_update();
           size_t toRead = fileSize - written;
           if (toRead > sizeof(buf)) toRead = sizeof(buf);
           
           size_t chunkRead = 0;
           unsigned long lastData = millis();
           while (chunkRead < toRead && (millis() - lastData < 5000)) {
+            watchdog_update();
             if (Serial1.available()) {
               buf[chunkRead++] = Serial1.read();
               lastData = millis();
@@ -1281,6 +1287,10 @@ void setup() {
 
   Serial1.setTX(0); Serial1.setRX(1); Serial1.begin(115200);
 
+  watchdog_enable(4000, 1);
+
+  reportSoC();
+
   // Start in booting state and notify the Pi
   setState(S_BOOTING);
   Serial1.print("{\"event\":\"BOOTING\",\"version\":\"" FIRMWARE_VERSION "\",\"volume\":");
@@ -1289,6 +1299,13 @@ void setup() {
 }
 
 void loop() {
+  watchdog_update();
+
+  if (digitalRead(PI_SHUTDOWN_SENSE_PIN) == HIGH && currentState != S_SHUTDOWN) {
+    Serial.println("Pico: Emergency PI_SHUTDOWN_SENSE_PIN HIGH detected. Driving POLOLU_OFF_PIN HIGH!");
+    digitalWrite(POLOLU_OFF_PIN, HIGH);
+    while (1) { delay(10); }
+  }
   // Animation frame ~60fps
   if (millis() - lastFrame >= 16) {
     lastFrame = millis();
@@ -1318,6 +1335,10 @@ void loop() {
     char c = (char)Serial1.read();
     if (c == '\n') {
       inputBuffer.trim();
+      int startIdx = inputBuffer.indexOf('{');
+      if (startIdx >= 0) {
+        inputBuffer = inputBuffer.substring(startIdx);
+      }
       if (inputBuffer.length() > 0) handleEvent(inputBuffer);
       inputBuffer = "";
     } else {

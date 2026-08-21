@@ -251,7 +251,7 @@ def trigger_startup_sequence():
     global has_played_startup_sound
     if not has_played_startup_sound:
         has_played_startup_sound = True
-        play_system_sound('startup')
+        play_system_sound('startup', 'startup.wav')
 
 def handle_pico_message(data):
     global battery_state, button_state, playback_state, pico_is_alive, pico_version, has_played_startup_sound

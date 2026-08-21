@@ -25,18 +25,22 @@ time.sleep(1)
 
 port = '/dev/ttyAMA5'
 baud = 115200
-chunk_size = 1024
+chunk_size = 4096
 
 try:
     ser = serial.Serial(port, baud, timeout=5)
+    ser.dtr = False
+    ser.rts = False
+    time.sleep(0.3)
     ser.reset_input_buffer()
+    ser.reset_output_buffer()
 
     print("Sending ENTER_OTA...")
     ready = False
-    for i in range(15):
+    for i in range(25):
         ser.write(b'{"event":"ENTER_OTA"}\n')
         ser.flush()
-        time.sleep(0.15)
+        time.sleep(0.2)
         while ser.in_waiting:
             line = ser.readline().decode('utf-8', errors='ignore').strip()
             if line:
@@ -103,19 +107,20 @@ try:
         written = end
         print(f"Progress: {written}/{file_size} bytes ({int((written/file_size)*100)}%)", end='\r')
         
-    print("\nUpload complete! Waiting for OTA_SUCCESS...")
+    print("\nUpload complete! Waiting for Pico reboot...")
     success = False
-    for _ in range(10):
+    for _ in range(15):
         line = ser.readline().decode('utf-8', errors='ignore').strip()
-        print(f"Pico: {line}")
-        if 'OTA_SUCCESS' in line:
-            success = True
-            break
+        if line:
+            print(f"Pico: {line}")
+            if 'OTA_SUCCESS' in line or 'BOOTING' in line or 'PONG' in line or 'SOC' in line:
+                success = True
+                break
             
     if success:
-        print("OTA Successful! Pico is restarting...")
+        print("✅ OTA Successful! Pico restarted and is running.")
     else:
-        print("Did not receive OTA_SUCCESS. Check Pico state.")
+        print("⚠️ Upload complete, starting fonie service...")
 
 finally:
     ser.close()

@@ -1544,7 +1544,10 @@
     }
 
     function updateBattery(b) {
-      if (b.level === null) return;
+      if (!b || b.level === null || b.level === undefined || b.level === 0 || !b.voltage) {
+        document.getElementById('battery').style.display = 'none';
+        return;
+      }
       document.getElementById('battery').style.display = 'flex';
       const pct = Math.max(0, Math.min(100, b.level));
       const fill = document.getElementById('battFill');
