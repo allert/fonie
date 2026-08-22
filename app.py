@@ -416,8 +416,30 @@ def play_system_sound(event_name, default_filename=None):
     if filename:
         play_sound(filename)
 
+# ── Tag Removal Grace Period & Resumption ──────────────────────────────────
+grace_period_timer = None
+last_removed_tag = None
+last_removed_time = 0
+GRACE_PERIOD_SECONDS = 5.0
+
+def cancel_grace_timer():
+    global grace_period_timer
+    if grace_period_timer:
+        try: grace_period_timer.cancel()
+        except: pass
+        grace_period_timer = None
+
+def on_grace_period_expired(uid):
+    global last_removed_tag, grace_period_timer
+    print(f"⌛ Grace period expired for tag {uid}. Stopping playback.")
+    stop_playback(fast=True)
+    last_removed_tag = None
+    grace_period_timer = None
+
 def stop_playback(fast=False):
-    global mpv_process
+    global mpv_process, last_removed_tag
+    cancel_grace_timer()
+    last_removed_tag = None
     if mpv_process and mpv_process.poll() is None:
         if not fast:
             for vol in range(100, 0, -5):
@@ -702,6 +724,7 @@ def serial_listener():
 
 def handle_esp32_event(event):
     global active_rfid_tag, current_tag, esp32_is_alive, esp32_version, esp32_ip
+    global last_removed_tag, last_removed_time, grace_period_timer
     event_type = event.get('event')
     uid        = event.get('uid')
     if event.get('version'):
@@ -724,14 +747,44 @@ def handle_esp32_event(event):
             'color':   mappings[uid].get('color') if is_mapped else None,
         }
         char_name = mappings[uid].get('character_name', '') if is_mapped else ''
+        
+        now = time.time()
+        is_resume = (last_removed_tag == uid and (now - last_removed_time) <= (GRACE_PERIOD_SECONDS + 1.0) and mpv_process and mpv_process.poll() is None)
+        
+        cancel_grace_timer()
+        last_removed_tag = None
+
         send_pico("TAG_ON", mapped=is_mapped, name=char_name)
-        if is_mapped: play_system_sound('tag_mapped', 'tag_mapped_32.wav'); play_mapping(mappings[uid])
-        else:         play_system_sound('tag_unknown', 'tag_unknown_32.wav'); send_pico("TAG_UNKNOWN")
+        if is_mapped:
+            play_system_sound('tag_mapped', 'tag_mapped_32.wav')
+            if is_resume:
+                print(f"⏯️ Resuming playback for tag {uid} where it left off!")
+                mpv_set_pause(False)
+                send_playing_vibe(mappings[uid])
+            else:
+                play_mapping(mappings[uid])
+        else:
+            play_system_sound('tag_unknown', 'tag_unknown_32.wav')
+            send_pico("TAG_UNKNOWN")
         active_rfid_tag = uid
     elif event_type == 'TAG_OFF':
         print(f"📱 TAG OFF: {uid}")
         current_tag = {'present': False, 'uid': None, 'timestamp': datetime.now().isoformat()}
-        send_pico("TAG_OFF", uid=uid); stop_playback(); active_rfid_tag = None
+        send_pico("TAG_OFF", uid=uid)
+        
+        cancel_grace_timer()
+        
+        if mpv_process and mpv_process.poll() is None:
+            print(f"⏳ Tag {uid} removed. Pausing & starting {GRACE_PERIOD_SECONDS}s grace timer...")
+            mpv_set_pause(True)
+            last_removed_tag = uid
+            last_removed_time = time.time()
+            grace_period_timer = threading.Timer(GRACE_PERIOD_SECONDS, on_grace_period_expired, args=[uid])
+            grace_period_timer.daemon = True
+            grace_period_timer.start()
+        else:
+            stop_playback()
+        active_rfid_tag = None
     elif event_type == 'WIFI_CONFIG':
         ssid = event.get('ssid', '')
         password = event.get('pass', '')
