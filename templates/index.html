@@ -1910,10 +1910,9 @@
              </div>`
           : '';
         const vibeBadge = m.vibe_mode ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.08); color:var(--muted); text-transform:uppercase; font-weight:500;">🎵 ${m.vibe_mode} (${m.vibe_speed || 1}x)</span>` : '';
-        const charBadge = m.character_name
-          ? `<button class="btn-sm" style="background:rgba(0,255,200,0.15); color:#00ffc8; border:1px solid rgba(0,255,200,0.3); font-weight:500;" onclick="editCharacterName('${uid}', '${(m.character_name || '').replace(/'/g, "\\'")}')">🎭 ${m.character_name}</button>`
-          : `<button class="btn-sm" style="background:var(--bg); border:1px dashed var(--border); color:var(--muted);" onclick="editCharacterName('${uid}', '')">+ Character Name</button>`;
-        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
+        const charBadge = m.character_name ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(0,255,200,0.15); color:#00ffc8; font-weight:500; text-transform:uppercase;">🎭 ${m.character_name}</span>` : '';
+        const editCharBtn = `<button class="btn-sm" style="background:rgba(0,255,200,0.12); color:#00ffc8; border:1px solid rgba(0,255,200,0.3); font-weight:500;" onclick="editCharacterName('${uid}', '${(m.character_name || '').replace(/'/g, "\\'")}')">${m.character_name ? '🎭 ' + m.character_name : '+ Character Name'}</button>`;
+        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${editCharBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
     }
 
