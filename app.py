@@ -723,7 +723,8 @@ def handle_esp32_event(event):
             'artist':  mappings[uid]['artist'] if is_mapped else None,
             'color':   mappings[uid].get('color') if is_mapped else None,
         }
-        send_pico("TAG_ON", mapped=is_mapped)
+        char_name = mappings[uid].get('character_name', '') if is_mapped else ''
+        send_pico("TAG_ON", mapped=is_mapped, name=char_name)
         if is_mapped: play_system_sound('tag_mapped', 'tag_mapped_32.wav'); play_mapping(mappings[uid])
         else:         play_system_sound('tag_unknown', 'tag_unknown_32.wav'); send_pico("TAG_UNKNOWN")
         active_rfid_tag = uid
@@ -921,7 +922,8 @@ def add_mapping():
     uid  = data.get('uid', '').strip()
     if not uid: return jsonify({'error': 'UID required'}), 400
     mapping = {'uid': uid, 'type': data.get('type'), 'title': data.get('title'),
-               'artist': data.get('artist'), 'ytmusic_id': data.get('id'),
+               'artist': data.get('artist'), 'character_name': data.get('character_name', '').strip(),
+               'ytmusic_id': data.get('id'),
                'thumbnail': data.get('thumbnail'), 'status': 'pending',
                'media_path': None, 'color': None, 'added': datetime.now().isoformat()}
     mappings = load_mappings()

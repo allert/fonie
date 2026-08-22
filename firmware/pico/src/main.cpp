@@ -68,7 +68,7 @@ Adafruit_NeoPixel stripL(STRIP_LEDS, STRIPL_PIN, NEO_GRBW + NEO_KHZ800);
 Adafruit_NeoPixel stripR(STRIP_LEDS, STRIPR_PIN, NEO_GRBW + NEO_KHZ800);
 
 // ── State machine ─────────────────────────────────────────────────────────────
-enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN, S_LED_TEST, S_IDLE, S_WIFI_AP };
+enum State { S_OFF, S_TAG_ON_BURST, S_PLAYING, S_PAUSED, S_TAG_OFF_FADE, S_VOLUME, S_BOOTING, S_SHUTDOWN, S_LED_TEST, S_IDLE, S_WIFI_AP, S_TAG_TEXT_SCROLL };
 State currentState   = S_BOOTING;
 State preVolumeState = S_OFF;
 
@@ -366,6 +366,35 @@ const uint8_t digitFont[10][5] = {
   {0b111,0b101,0b111,0b101,0b111},{0b111,0b101,0b111,0b001,0b111},
 };
 
+const uint8_t letterFont[26][5] = {
+  {0b010,0b101,0b111,0b101,0b101}, // A
+  {0b110,0b101,0b110,0b101,0b110}, // B
+  {0b011,0b100,0b100,0b100,0b011}, // C
+  {0b110,0b101,0b101,0b101,0b110}, // D
+  {0b111,0b100,0b110,0b100,0b111}, // E
+  {0b111,0b100,0b110,0b100,0b100}, // F
+  {0b011,0b100,0b101,0b101,0b011}, // G
+  {0b101,0b101,0b111,0b101,0b101}, // H
+  {0b111,0b010,0b010,0b010,0b111}, // I
+  {0b001,0b001,0b001,0b101,0b010}, // J
+  {0b101,0b101,0b110,0b101,0b101}, // K
+  {0b100,0b100,0b100,0b100,0b111}, // L
+  {0b101,0b111,0b101,0b101,0b101}, // M
+  {0b101,0b111,0b111,0b101,0b101}, // N
+  {0b010,0b101,0b101,0b101,0b010}, // O
+  {0b110,0b101,0b110,0b100,0b100}, // P
+  {0b010,0b101,0b101,0b110,0b011}, // Q
+  {0b110,0b101,0b110,0b101,0b101}, // R
+  {0b011,0b100,0b010,0b001,0b110}, // S
+  {0b111,0b010,0b010,0b010,0b010}, // T
+  {0b101,0b101,0b101,0b101,0b011}, // U
+  {0b101,0b101,0b101,0b101,0b010}, // V
+  {0b101,0b101,0b101,0b111,0b101}, // W
+  {0b101,0b101,0b010,0b101,0b101}, // X
+  {0b101,0b101,0b010,0b010,0b010}, // Y
+  {0b111,0b001,0b010,0b100,0b111}  // Z
+};
+
 // ── Matrix helpers ────────────────────────────────────────────────────────────
 int matrixPixel(int x, int y) {
   int rx = y;
@@ -376,62 +405,30 @@ void matrixSet(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
   if (x < 0 || x >= 8 || y < 0 || y >= 8) return;
   matrix.setPixelColor(matrixPixel(x, y), matrix.Color(r, g, b));
 }
-void matrixClear() { matrix.clear(); }
+void matrixClear() {
+  matrix.clear();
+  matrix.show();
+}
 
-void drawDigit(int d, int startX, int startY, uint8_t r, uint8_t g, uint8_t b) {
+void drawChar5x3(char c, int startX, int startY, uint8_t r, uint8_t g, uint8_t b) {
+  c = toupper(c);
+  const uint8_t* rows = nullptr;
+  if (c >= '0' && c <= '9') rows = digitFont[c - '0'];
+  else if (c >= 'A' && c <= 'Z') rows = letterFont[c - 'A'];
+  if (!rows) return;
   for (int row = 0; row < 5; row++) {
-    uint8_t bits = digitFont[d][row];
+    uint8_t bits = rows[row];
     for (int col = 0; col < 3; col++)
       if (bits & (1 << (2 - col))) matrixSet(startX + col, startY + row, r, g, b);
   }
 }
 
+void drawDigit(int d, int startX, int startY, uint8_t r, uint8_t g, uint8_t b) {
+  drawChar5x3(d + '0', startX, startY, r, g, b);
+}
+
 void drawSoC(int soc) {
-  matrixClear();
-  uint8_t r, g, b = 0;
-  if (isCharging)    { r = 0;   g = 200; b = 255; }
-  else if (soc > 50) { r = 0;   g = 255; b = 0;   }
-  else if (soc > 20) { r = 255; g = 180; b = 0;   }
-  else               { r = 255; g = 0;   b = 0;   }
-
-  if (soc >= 100) {
-    drawDigit(1, 0, 1, r, g, b);
-    drawDigit(0, 4, 1, r, g, b);
-  } else if (soc < 10) {
-    drawDigit(soc, 3, 1, r, g, b);
-  } else {
-    drawDigit(soc / 10, 1, 1, r, g, b);
-    drawDigit(soc % 10, 5, 1, r, g, b);
-  }
-
-  matrixSet(7, 5, r, g, b);
-  matrixSet(6, 6, r, g, b);
-  if (isCharging) {
-    float p = (sin(millis() * 0.006f) + 1.0f) * 0.5f;
-    matrixSet(7, 7, 0, (uint8_t)(255 * p), (uint8_t)(100 * p));
-  } else {
-    matrixSet(7, 7, r, g, b);
-  }
-  matrix.show();
-
-  int litLeds = (soc * RING_LEDS) / 100;
-  ring.clear();
-  float ringBreath = (sin(millis() * 0.004f) + 1.0f) * 0.5f;
-  for (int i = 0; i < litLeds; i++) {
-    float t = (float)i / RING_LEDS;
-    uint8_t lr, lg, lb = 0;
-    if (isCharging) {
-      float pulse = 0.6f + 0.4f * ringBreath;
-      lr = 0;
-      lg = (uint8_t)(180 * pulse);
-      lb = (uint8_t)(255 * pulse * t);
-    } else {
-      lr = t < 0.5f ? (uint8_t)(t * 2 * 80) : 255;
-      lg = t < 0.5f ? 255 : (uint8_t)(255 - ((t - 0.5f) * 2 * 255));
-    }
-    ring.setPixelColor(i, ring.Color(lr, lg, lb));
-  }
-  ring.show();
+  return;
 }
 
 // ── Matrix animations ─────────────────────────────────────────────────────────
@@ -464,9 +461,6 @@ void drawMatrixWave(uint8_t r, uint8_t g, uint8_t b) {
 
 void drawMatrixCheckerboard(uint8_t r, uint8_t g, uint8_t b) {
   matrixClear();
-  for (int x = 0; x < 8; x++)
-    for (int y = 0; y < 8; y++)
-      if ((x + y) % 2 == 0) matrixSet(x, y, r, g, b);
   matrix.show();
 }
 
@@ -893,6 +887,33 @@ void frameOff() {
   allOff();
 }
 
+String charName = "";
+
+void drawScrollingText(const String& text, uint8_t r, uint8_t g, uint8_t b) {
+  matrixClear();
+  if (text.length() == 0) return;
+  int textLenPixels = text.length() * 4;
+  unsigned long now = millis();
+  float totalWidth = 8 + textLenPixels;
+  float progress = (float)((now - stateStart) % 3000) / 3000.0f;
+  int offset = 8 - (int)(progress * totalWidth);
+
+  for (size_t i = 0; i < text.length(); i++) {
+    int charX = offset + ((int)i * 4);
+    if (charX > -4 && charX < 8) {
+      drawChar5x3(text[i], charX, 1, r, g, b);
+    }
+  }
+  matrix.show();
+}
+
+void frameTextScroll() {
+  drawScrollingText(charName, animR, animG, animB);
+  if (millis() - stateStart > (unsigned long)(max(2500, (int)charName.length() * 650))) {
+    setState(S_PLAYING);
+  }
+}
+
 // ── Event handlers ────────────────────────────────────────────────────────────
 void onReady() {
   String msg = "{\"event\":\"VOLUME\",\"level\":" + String(volumeLevel) + "}";
@@ -901,10 +922,15 @@ void onReady() {
   setState(S_IDLE);
 }
 
-void onTagOn(bool mapped) {
+void onTagOn(bool mapped, const String& name) {
   if (mapped) { animR = 0;   animG = 200; animB = 200; }
   else        { animR = 200; animG = 140; animB = 0;   }
-  setState(S_TAG_ON_BURST);
+  charName = name;
+  if (charName.length() > 0) {
+    setState(S_TAG_TEXT_SCROLL);
+  } else {
+    setState(S_TAG_ON_BURST);
+  }
 }
 
 void onPlaying(uint8_t r, uint8_t g, uint8_t b) {
@@ -1047,7 +1073,7 @@ void handleEvent(const String& line) {
   }
   else if (event == "READY" || event == "IDLE") onReady();
   else if (event == "WIFI_AP") setState(S_WIFI_AP);
-  else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true");
+  else if (event == "TAG_ON")   onTagOn(extractValue(line, "mapped") == "true", extractValue(line, "name"));
   else if (event == "TAG_OFF" || event == "TAG_UNKNOWN") setState(S_TAG_OFF_FADE);
   else if (event == "SHUTDOWN" || (event == "EVENT" && extractValue(line, "name") == "shutdown")) {
     setState(S_SHUTDOWN);
@@ -1310,17 +1336,18 @@ void loop() {
   if (millis() - lastFrame >= 16) {
     lastFrame = millis();
     switch (currentState) {
-      case S_BOOTING:      frameBooting(); break;
-      case S_TAG_ON_BURST: frameBurst();   break;
-      case S_PLAYING:      framePlaying(); break;
-      case S_PAUSED:       framePaused();  break;
-      case S_TAG_OFF_FADE: frameFade();    break;
-      case S_VOLUME:       frameVolume();  break;
-      case S_OFF:          frameOff();     break;
-      case S_SHUTDOWN:     frameShutdown(); break;
-      case S_LED_TEST:     frameLedTest(); break;
-      case S_WIFI_AP:       frameWifiAp();  break;
-      case S_IDLE:         allOff();       break;
+      case S_BOOTING:          frameBooting(); break;
+      case S_TAG_ON_BURST:     frameBurst();   break;
+      case S_TAG_TEXT_SCROLL:  frameTextScroll(); break;
+      case S_PLAYING:          framePlaying(); break;
+      case S_PAUSED:           framePaused();  break;
+      case S_TAG_OFF_FADE:     frameFade();    break;
+      case S_VOLUME:           frameVolume();  break;
+      case S_OFF:              frameOff();     break;
+      case S_SHUTDOWN:         frameShutdown(); break;
+      case S_LED_TEST:         frameLedTest(); break;
+      case S_WIFI_AP:           frameWifiAp();  break;
+      case S_IDLE:             allOff();       break;
     }
   }
 
@@ -1335,7 +1362,7 @@ void loop() {
     char c = (char)Serial1.read();
     if (c == '\n') {
       inputBuffer.trim();
-      int startIdx = inputBuffer.indexOf('{');
+      int startIdx = inputBuffer.lastIndexOf('{');
       if (startIdx >= 0) {
         inputBuffer = inputBuffer.substring(startIdx);
       }
