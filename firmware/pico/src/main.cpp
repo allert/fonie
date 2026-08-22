@@ -907,9 +907,16 @@ void drawScrollingText(const String& text, uint8_t r, uint8_t g, uint8_t b) {
   matrix.show();
 }
 
+bool pendingPlaying = false;
+uint8_t pendingPlayR = 0, pendingPlayG = 0, pendingPlayB = 0;
+
 void frameTextScroll() {
   drawScrollingText(charName, animR, animG, animB);
   if (millis() - stateStart > (unsigned long)(max(2500, (int)charName.length() * 650))) {
+    if (pendingPlaying) {
+      pendingPlaying = false;
+      animR = pendingPlayR; animG = pendingPlayG; animB = pendingPlayB;
+    }
     setState(S_PLAYING);
   }
 }
@@ -926,6 +933,7 @@ void onTagOn(bool mapped, const String& name) {
   if (mapped) { animR = 0;   animG = 200; animB = 200; }
   else        { animR = 200; animG = 140; animB = 0;   }
   charName = name;
+  pendingPlaying = false;
   if (charName.length() > 0) {
     setState(S_TAG_TEXT_SCROLL);
   } else {
@@ -935,7 +943,12 @@ void onTagOn(bool mapped, const String& name) {
 
 void onPlaying(uint8_t r, uint8_t g, uint8_t b) {
   animR = r; animG = g; animB = b;
-  setState(S_PLAYING);
+  if (currentState == S_TAG_TEXT_SCROLL) {
+    pendingPlaying = true;
+    pendingPlayR = r; pendingPlayG = g; pendingPlayB = b;
+  } else {
+    setState(S_PLAYING);
+  }
 }
 
 void onVolume(int vol) {
