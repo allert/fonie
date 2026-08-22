@@ -436,6 +436,41 @@ def on_grace_period_expired(uid):
     last_removed_tag = None
     grace_period_timer = None
 
+def mpv_fade_out(duration=0.4, callback=None):
+    """Smoothly fades out mpv volume, then pauses mpv and executes callback."""
+    def _fade():
+        if not mpv_process or mpv_process.poll() is not None:
+            if callback: callback()
+            return
+        target_vol = playback_state.get('volume', 80)
+        steps = 8
+        step_time = duration / float(steps)
+        for i in range(steps, -1, -1):
+            vol = int((i / float(steps)) * target_vol)
+            mpv_command({"command": ["set_property", "volume", vol]})
+            time.sleep(step_time)
+        mpv_set_pause(True)
+        mpv_command({"command": ["set_property", "volume", target_vol]})
+        if callback: callback()
+    threading.Thread(target=_fade, daemon=True).start()
+
+def mpv_fade_in(duration=0.5):
+    """Unpauses mpv at volume 0 and smoothly fades in to target volume."""
+    def _fade():
+        if not mpv_process or mpv_process.poll() is not None:
+            return
+        target_vol = playback_state.get('volume', 80)
+        mpv_command({"command": ["set_property", "volume", 0]})
+        mpv_set_pause(False)
+        steps = 10
+        step_time = duration / float(steps)
+        for i in range(1, steps + 1):
+            vol = int((i / float(steps)) * target_vol)
+            mpv_command({"command": ["set_property", "volume", vol]})
+            time.sleep(step_time)
+        mpv_command({"command": ["set_property", "volume", target_vol]})
+    threading.Thread(target=_fade, daemon=True).start()
+
 def stop_playback(fast=False):
     global mpv_process, last_removed_tag
     cancel_grace_timer()
@@ -758,8 +793,8 @@ def handle_esp32_event(event):
         if is_mapped:
             play_system_sound('tag_mapped', 'tag_mapped_32.wav')
             if is_resume:
-                print(f"⏯️ Resuming playback for tag {uid} where it left off!")
-                mpv_set_pause(False)
+                print(f"⏯️ Resuming playback for tag {uid} where it left off with smooth fade-in!")
+                mpv_fade_in(0.5)
                 send_playing_vibe(mappings[uid])
             else:
                 play_mapping(mappings[uid])
@@ -775,10 +810,10 @@ def handle_esp32_event(event):
         cancel_grace_timer()
         
         if mpv_process and mpv_process.poll() is None:
-            print(f"⏳ Tag {uid} removed. Pausing & starting {GRACE_PERIOD_SECONDS}s grace timer...")
-            mpv_set_pause(True)
+            print(f"⏳ Tag {uid} removed. Fading out & starting {GRACE_PERIOD_SECONDS}s grace timer...")
             last_removed_tag = uid
             last_removed_time = time.time()
+            mpv_fade_out(0.4)
             grace_period_timer = threading.Timer(GRACE_PERIOD_SECONDS, on_grace_period_expired, args=[uid])
             grace_period_timer.daemon = True
             grace_period_timer.start()

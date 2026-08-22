@@ -530,13 +530,15 @@ void allOff() {
   setRGB(0,0,0);
 }
 
+float playFadeIn = 1.0f;
+
 void setState(State s) {
   currentState = s;
   stateStart   = millis();
   lastFrame    = millis();
   if (s == S_OFF)          allOff();
   if (s == S_TAG_OFF_FADE) fadeVal   = 1.0;
-  if (s == S_PLAYING)      { spinPos = 0; breathVal = 1.0; breathDir = -1; waveOffset = 0; }
+  if (s == S_PLAYING)      { spinPos = 0; breathVal = 1.0; breathDir = -1; waveOffset = 0; playFadeIn = 0.0f; }
   if (s == S_PAUSED)       { breathVal = 1.0; breathDir = -1; }
   if (s == S_SHUTDOWN) {
     lastPiPingSent = 0;
@@ -806,24 +808,36 @@ void framePlaying() {
   spinPos = fmod(spinPos + 0.15f * speed, RING_LEDS);
   waveOffset += 0.08f * speed;
 
-  drawRingSpin(spinPos * (2.0f * M_PI / RING_LEDS), animR, animG, animB);
-
-  if (animMode == "wave") {
-    drawMatrixWave(animR, animG, animB);
-    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed);
-  } else if (animMode == "starfield") {
-    drawStarfield(animR, animG, animB, speed);
-    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed * 0.5f);
-  } else if (animMode == "party") {
-    float angle = (float)(now % 1000) / 1000.0f * 2.0f * M_PI;
-    drawMatrixSpin(angle, animR, animG, animB);
-    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed * 1.2f);
-  } else {
-    drawEqualizer(animR, animG, animB, animR2, animG2, animB2, speed);
-    drawStereoVU(animR, animG, animB, animR2, animG2, animB2, speed);
+  if (playFadeIn < 1.0f) {
+    playFadeIn += 0.04f;
+    if (playFadeIn > 1.0f) playFadeIn = 1.0f;
   }
 
-  setRGB((animR + animR2) / 4, (animG + animG2) / 4, (animB + animB2) / 4);
+  uint8_t r1 = (uint8_t)(animR * playFadeIn);
+  uint8_t g1 = (uint8_t)(animG * playFadeIn);
+  uint8_t b1 = (uint8_t)(animB * playFadeIn);
+  uint8_t r2 = (uint8_t)(animR2 * playFadeIn);
+  uint8_t g2 = (uint8_t)(animG2 * playFadeIn);
+  uint8_t b2 = (uint8_t)(animB2 * playFadeIn);
+
+  drawRingSpin(spinPos * (2.0f * M_PI / RING_LEDS), r1, g1, b1);
+
+  if (animMode == "wave") {
+    drawMatrixWave(r1, g1, b1);
+    drawStereoVU(r1, g1, b1, r2, g2, b2, speed);
+  } else if (animMode == "starfield") {
+    drawStarfield(r1, g1, b1, speed);
+    drawStereoVU(r1, g1, b1, r2, g2, b2, speed * 0.5f);
+  } else if (animMode == "party") {
+    float angle = (float)(now % 1000) / 1000.0f * 2.0f * M_PI;
+    drawMatrixSpin(angle, r1, g1, b1);
+    drawStereoVU(r1, g1, b1, r2, g2, b2, speed * 1.2f);
+  } else {
+    drawEqualizer(r1, g1, b1, r2, g2, b2, speed);
+    drawStereoVU(r1, g1, b1, r2, g2, b2, speed);
+  }
+
+  setRGB((r1 + r2) / 4, (g1 + g2) / 4, (b1 + b2) / 4);
 }
 
 void framePaused() {
@@ -845,7 +859,7 @@ void framePaused() {
 }
 
 void frameFade() {
-  fadeVal -= 0.025;
+  fadeVal -= 0.02;
   if (fadeVal <= 0) { setState(S_OFF); return; }
   ring.fill(ring.Color((uint8_t)(animR*fadeVal),(uint8_t)(animG*fadeVal),(uint8_t)(animB*fadeVal)));
   ring.show();
@@ -1110,7 +1124,14 @@ void handleEvent(const String& line) {
     if (mode.length()) animMode = mode;
     if (spd.length())  animSpeed = spd.toFloat();
 
-    setState(S_PLAYING);
+    if (currentState == S_TAG_TEXT_SCROLL) {
+      pendingPlaying = true;
+      pendingPlayR = animR;
+      pendingPlayG = animG;
+      pendingPlayB = animB;
+    } else {
+      setState(S_PLAYING);
+    }
   }
   else if (event == "PAUSED") setState(S_PAUSED);
   else if (event == "VOLUME") {
