@@ -941,7 +941,20 @@ def delete_mapping(uid):
             import shutil; shutil.rmtree(media_path, ignore_errors=True)
         del mappings[uid]; save_mappings(mappings)
         return jsonify({'success': True})
-    return jsonify({'error': 'Not found'}), 404
+@app.route('/api/mappings/update/<uid>', methods=['POST'])
+def update_mapping(uid):
+    mappings = load_mappings()
+    if uid not in mappings:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    if 'character_name' in data:
+        mappings[uid]['character_name'] = data['character_name'].strip()
+    if 'title' in data:
+        mappings[uid]['title'] = data['title'].strip()
+    if 'artist' in data:
+        mappings[uid]['artist'] = data['artist'].strip()
+    save_mappings(mappings)
+    return jsonify({'success': True, 'mapping': mappings[uid]})
 
 @app.route('/api/mappings/retry/<uid>', methods=['POST'])
 def retry_mapping(uid):

@@ -1911,8 +1911,22 @@
           : '';
         const vibeBadge = m.vibe_mode ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.08); color:var(--muted); text-transform:uppercase; font-weight:500;">🎵 ${m.vibe_mode} (${m.vibe_speed || 1}x)</span>` : '';
         const charBadge = m.character_name ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(0,255,200,0.15); color:#00ffc8; font-weight:500; text-transform:uppercase;">🎭 ${m.character_name}</span>` : '';
-        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
+        const editCharBtn = `<button class="btn-sm" onclick="editCharacterName('${uid}', '${(m.character_name || '').replace(/'/g, "\\'")}')">🎭 Edit Name</button>`;
+        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${editCharBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
+    }
+
+    async function editCharacterName(uid, currentName) {
+      const newName = prompt('Enter Character / Figurine Name for 8x8 matrix scroller:', currentName);
+      if (newName === null) return;
+      try {
+        await fetch(`/api/mappings/update/${uid}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ character_name: newName.trim() })
+        });
+        pollMappings();
+      } catch (e) { console.error('Failed to update character name:', e); }
     }
 
     async function loadConfigMedia() {
