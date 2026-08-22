@@ -419,7 +419,7 @@ void drawChar5x3(char c, int startX, int startY, uint8_t r, uint8_t g, uint8_t b
   for (int row = 0; row < 5; row++) {
     uint8_t bits = rows[row];
     for (int col = 0; col < 3; col++)
-      if (bits & (1 << (2 - col))) matrixSet(startX + col, startY + row, r, g, b);
+      if (bits & (1 << (2 - col))) matrixSet(startX + col, startY + (4 - row), r, g, b);
   }
 }
 
