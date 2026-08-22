@@ -1903,8 +1903,11 @@
           ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:8px; width:100%;">
               ${m.tracks.map(t => `
                 <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--bg); border-radius:4px; font-size:11px;">
-                  <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${t}</span>
-                  <button class="btn-sm" style="padding:2px 6px; flex-shrink:0;" onclick="event.stopPropagation(); playMedia('music', '${uid}/${t}')">▶ Play</button>
+                  <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;" title="${t}">${t}</span>
+                  <div style="display:flex; gap:4px; flex-shrink:0;">
+                    <button class="btn-sm" style="padding:2px 6px;" onclick="event.stopPropagation(); playMedia('music', '${uid}/${t}')">▶ Play</button>
+                    <button class="btn-sm danger" style="padding:2px 6px;" title="Delete track" onclick="event.stopPropagation(); deleteTrack('${uid}', '${t.replace(/'/g, "\\'")}')">🗑️</button>
+                  </div>
                 </div>
               `).join('')}
              </div>`
@@ -1912,7 +1915,8 @@
         const vibeBadge = m.vibe_mode ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.08); color:var(--muted); text-transform:uppercase; font-weight:500;">🎵 ${m.vibe_mode} (${m.vibe_speed || 1}x)</span>` : '';
         const charBadge = m.character_name ? `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(0,255,200,0.15); color:#00ffc8; font-weight:500; text-transform:uppercase;">🎭 ${m.character_name}</span>` : '';
         const editCharBtn = `<button class="btn-sm" style="background:rgba(0,255,200,0.12); color:#00ffc8; border:1px solid rgba(0,255,200,0.3); font-weight:500;" onclick="editCharacterName('${uid}', '${(m.character_name || '').replace(/'/g, "\\'")}')">${m.character_name ? '🎭 ' + m.character_name : '+ Character Name'}</button>`;
-        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${editCharBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
+        const editFullBtn = `<button class="btn-sm" style="background:var(--bg); border:1px solid var(--border);" onclick="editMappingFull('${uid}', '${(m.title||'').replace(/'/g, "\\'")}', '${(m.artist||'').replace(/'/g, "\\'")}', '${(m.character_name||'').replace(/'/g, "\\'")}')">✏️ Edit</button>`;
+        return `<div class="mapping-card ${sc}"><div class="card-top"><div class="card-info"><div class="card-title">${m.title || '—'}</div><div class="card-artist">${m.artist || '—'}</div></div><span class="card-type ${m.type}">${m.type}</span></div><div class="card-uid" style="display:flex; justify-content:space-between; align-items:center;"><span>${uid}</span><div style="display:flex; gap:4px;">${charBadge}${vibeBadge}</div></div>${pb}${trackList}<div class="card-actions">${playBtn}${editCharBtn}${editFullBtn}${rb}<button class="btn-sm danger" onclick="deleteMapping('${uid}')">Delete</button></div></div>`;
       }).join('');
     }
 
@@ -1927,6 +1931,49 @@
         });
         pollMappings();
       } catch (e) { console.error('Failed to update character name:', e); }
+    }
+
+    async function editMappingFull(uid, currentTitle, currentArtist, currentCharName) {
+      const newUid = prompt(`Edit Tag UID for '${currentTitle}' (Leave unchanged or enter new UID):`, uid);
+      if (newUid === null) return;
+      const newTitle = prompt('Edit Title:', currentTitle);
+      if (newTitle === null) return;
+      const newArtist = prompt('Edit Artist:', currentArtist);
+      if (newArtist === null) return;
+      const newCharName = prompt('Edit Character / Figurine Name:', currentCharName);
+      if (newCharName === null) return;
+
+      try {
+        const res = await (await fetch(`/api/mappings/update/${uid}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            new_uid: newUid.trim(),
+            title: newTitle.trim(),
+            artist: newArtist.trim(),
+            character_name: newCharName.trim()
+          })
+        })).json();
+
+        if (res.error) {
+          alert('Error updating mapping: ' + res.error);
+        } else {
+          pollMappings();
+        }
+      } catch (e) { alert('Failed to update mapping: ' + e); }
+    }
+
+    async function deleteTrack(uid, filename) {
+      if (!confirm(`Delete track "${filename}" from this mapping?`)) return;
+      try {
+        const res = await (await fetch(`/api/mappings/${uid}/delete-track`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: filename })
+        })).json();
+        if (res.error) alert('Error: ' + res.error);
+        else pollMappings();
+      } catch (e) { alert('Failed to delete track: ' + e); }
     }
 
     async function loadConfigMedia() {

@@ -1039,14 +1039,59 @@ def update_mapping(uid):
     if uid not in mappings:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
+    mapping = mappings[uid]
+
+    new_uid = data.get('new_uid', '').strip()
+    if new_uid and new_uid != uid:
+        if new_uid in mappings:
+            return jsonify({'error': f'Tag UID {new_uid} is already mapped'}), 400
+        old_dir = mapping.get('media_path')
+        new_dir = os.path.join(MEDIA_DIR, new_uid)
+        if old_dir and os.path.exists(old_dir):
+            try:
+                os.rename(old_dir, new_dir)
+            except Exception as e:
+                return jsonify({'error': f'Failed to rename media folder: {e}'}), 500
+        else:
+            new_dir = os.path.join(MEDIA_DIR, new_uid)
+
+        mapping['uid'] = new_uid
+        mapping['media_path'] = new_dir
+        del mappings[uid]
+        mappings[new_uid] = mapping
+        uid = new_uid
+
     if 'character_name' in data:
-        mappings[uid]['character_name'] = data['character_name'].strip()
+        mapping['character_name'] = data['character_name'].strip()
     if 'title' in data:
-        mappings[uid]['title'] = data['title'].strip()
+        mapping['title'] = data['title'].strip()
     if 'artist' in data:
-        mappings[uid]['artist'] = data['artist'].strip()
+        mapping['artist'] = data['artist'].strip()
+
     save_mappings(mappings)
-    return jsonify({'success': True, 'mapping': mappings[uid]})
+    return jsonify({'success': True, 'uid': uid, 'mapping': mapping})
+
+@app.route('/api/mappings/<uid>/delete-track', methods=['POST'])
+def delete_mapping_track(uid):
+    mappings = load_mappings()
+    if uid not in mappings:
+        return jsonify({'error': 'Mapping not found'}), 404
+    data = request.json or {}
+    filename = data.get('filename', '').strip()
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    
+    media_path = mappings[uid].get('media_path')
+    if media_path and os.path.exists(media_path):
+        target = os.path.join(media_path, filename)
+        if os.path.abspath(target).startswith(os.path.abspath(media_path)):
+            if os.path.exists(target):
+                try:
+                    os.remove(target)
+                except Exception as e:
+                    return jsonify({'error': str(e)}), 500
+    save_mappings(mappings)
+    return jsonify({'success': True})
 
 @app.route('/api/mappings/retry/<uid>', methods=['POST'])
 def retry_mapping(uid):
